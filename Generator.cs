@@ -19,7 +19,9 @@ public class Generator : NetworkBehaviour
     public List<Resource> resources;
     private int generatedchunks = 0;
     public bool isGeneratingCompleted;
-
+    private questtype currentquest;
+    private int questtarget, questparam, questprogress;
+    private string funnyname;
     [SyncVar]
     public SyncListInt resourcesCount;
     [SyncVar]
@@ -68,6 +70,13 @@ public class Generator : NetworkBehaviour
                 walker -= (walker-center) / 15;
                 tunnelpoints.Add(walker);
             }
+        }
+        //квест
+        funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length];
+        currentquest = (questtype)Random.Range(0, 1);
+        if (currentquest == questtype.Добыча) {
+            questtarget = Random.Range(0, resources.Count);
+            questparam = Random.Range(7, 10) * resources[questtarget].maxInBag;
         }
         yield return GenerateClusters();
     }
@@ -155,5 +164,14 @@ public class Generator : NetworkBehaviour
                 GUI.Box(new Rect(Screen.width -60, 200+guishift*30, 30, 30), resourcesCount[i]+"");
                 ++guishift;
             }
+        //задание
+        GUI.Box(new Rect(Screen.width - 400, 0, 400, 100), "");
+        GUI.Box(new Rect(Screen.width - 300, 0, 300, 25), "Задание: " +currentquest);
+        GUI.Box(new Rect(Screen.width - 300, 25, 300, 25), "" + funnyname);
     }
+    public enum questtype { 
+        Добыча
+    }
+    private readonly string[] funnyA = { "Зов", "Ужас", "Крик", "Поиск", "Защита" };
+    private readonly string[] funnyB = { "Ужаса", "Вечности", "Пустоты", "Отчаяния", "Риска", "Власти" };
 }

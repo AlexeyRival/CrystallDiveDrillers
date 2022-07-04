@@ -276,7 +276,7 @@ public class marchingspace : MonoBehaviour
                 }
                 catch
                 {
-                    print("fuck");
+                    print("error");
                 }
                 //     Destroy(sph);
             
