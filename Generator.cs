@@ -22,17 +22,26 @@ public class Generator : NetworkBehaviour
     private questtype currentquest;
     private int questtarget, questparam, questprogress;
     private string funnyname;
+    private int addingresourcecount, addingresourceid;
+    private bool isaddingresource;
+    [SyncVar]
+    public bool DropPhase = false;
     [SyncVar]
     public SyncListInt resourcesCount;
     [SyncVar]
-    public bool isPlatformStarted = false, isPlatformStopped;
+    public bool isPlatformStarted = false, isPlatformStopped,isPlatformBack;
     private Vector3 startpoint;
     [SyncVar]
     public int seed;
     [Command]
-    public void CmdSetPlatformMoving(bool isStarted,bool isStopped) {
+    public void CmdSetPlatformMoving(bool isStarted,bool isStopped,bool isBack) {
         isPlatformStarted = isStarted;
         isPlatformStopped = isStopped;
+        isPlatformBack = isBack;
+    }
+    [Command]
+    public void CmdSetDropPhase(bool phase) {
+        DropPhase = phase;
     }
     [Command]
     public void CmdAddResource(int id, int amout) {
@@ -41,6 +50,7 @@ public class Generator : NetworkBehaviour
     public void AddResource(int id, int amout) {
         CmdAddResource(id, amout);
     }
+    
     // Start is called before the first frame update
     IEnumerator Start()
     {
@@ -72,11 +82,11 @@ public class Generator : NetworkBehaviour
             }
         }
         //квест
-        funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length];
+        funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
         currentquest = (questtype)Random.Range(0, 1);
         if (currentquest == questtype.Добыча) {
             questtarget = Random.Range(0, resources.Count);
-            questparam = Random.Range(7, 10) * resources[questtarget].maxInBag;
+            questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
         }
         yield return GenerateClusters();
     }
@@ -104,6 +114,7 @@ public class Generator : NetworkBehaviour
         manager.Recalculate();
     }
     public void StartPlatform() {
+        CmdSetDropPhase(true);
         try
         {
             startpoint = startpoints[Random.Range(0, startpoints.Count)];
@@ -117,24 +128,58 @@ public class Generator : NetworkBehaviour
             startpoint= hit.point;
             Instantiate(undestroyableground,startpoint,Quaternion.identity);
             platform.transform.position = new Vector3(startpoint.x, platform.transform.position.y, startpoint.z);
-            CmdSetPlatformMoving(true,false);
+            CmdSetPlatformMoving(true,false,false);
         }
         else {
             throw new System.Exception("BadSeedException");
         }
     }
+    public void GoBack() {
+        bool isQuestCompeted = GetQuestStatus();
+        if (isQuestCompeted) {
+            CmdSetPlatformMoving(true, false, true);
+        }
+    }
+    public bool GetQuestStatus()
+    {
+        if (currentquest == questtype.Добыча)
+        {
+            if (resourcesCount[questtarget] >= questparam) { return true; }
+        }
+        return false;
+    }
     public void Update()
     {
         if (isPlatformStarted)
         {
-            if (Vector3.Distance(platform.transform.position, startpoint) > 5f)
+            if (!isPlatformBack)
             {
-                platform.transform.Translate(0, -4f * Time.deltaTime, 0);
+                if (Vector3.Distance(platform.transform.position, startpoint) > 5f)
+                {
+                    platform.transform.Translate(0, -4f * Time.deltaTime, 0);
+                }
+                else
+                {
+                    CmdSetPlatformMoving(false, true, false);
+                }
             }
             else
             {
-                CmdSetPlatformMoving(false, true);
+                if (Vector3.Distance(platform.transform.position, startpoint) < 100f)
+                {
+                    platform.transform.Translate(0, 6f * Time.deltaTime, 0);
+                }
+                else
+                {
+                    CmdSetPlatformMoving(false, true, false);
+                }
             }
+        }
+        if (isaddingresource) {
+            CmdAddResource(addingresourceid, addingresourcecount);
+            isaddingresource = false;
+        }
+        if (isServer) {
         }
     }
     private void OnDrawGizmos()
@@ -168,6 +213,11 @@ public class Generator : NetworkBehaviour
         GUI.Box(new Rect(Screen.width - 400, 0, 400, 100), "");
         GUI.Box(new Rect(Screen.width - 300, 0, 300, 25), "Задание: " +currentquest);
         GUI.Box(new Rect(Screen.width - 300, 25, 300, 25), "" + funnyname);
+        if (currentquest == questtype.Добыча) { 
+            GUI.Box(new Rect(Screen.width - 300, 50, 300, 25), "Добудьте " + resources[questtarget].materialName);
+            GUI.Box(new Rect(Screen.width - 300, 75, 300, 25), resourcesCount[questtarget] + "/" + questparam);
+            GUI.Box(new Rect(Screen.width - 400, 0, 100, 100), resources[questtarget].icon);
+        }
     }
     public enum questtype { 
         Добыча

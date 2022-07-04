@@ -8,7 +8,7 @@ public class player : NetworkBehaviour
     public GameObject head;
     public float speed = 75f;
     public GameObject sphereDestroyer,flare;
-    public TextMesh nickobject,hpobject;
+    public TextMesh hpobject;
     private Rigidbody rb;
     private Vector3 mousedelta;
     private RaycastHit hit;
@@ -18,11 +18,14 @@ public class player : NetworkBehaviour
     private bool isTeleported = false;
     private float attackcooldown = 0;
     private float flarecooldown = 0;
-    private int localhp = 100;
+    private int localhp = 101;
     private float magnitude;
-    private bool seeContainer;
+    private bool seeContainer,seeInteraction, gobackinteraction;
     private float containercooldown = 0;
+    
     private GameObject[] allitems;
+    [SyncVar]
+    public bool isDropToContainer;
     [SyncVar]
     public int hp = 100;
     [SyncVar]
@@ -47,13 +50,17 @@ public class player : NetworkBehaviour
     [Command]
     void CmdAddResource(int id,int amout) {
         resourcesCount[id]+=amout;
+        if (amout < 0) {
+            generator.AddResource(id, -amout);
+        }
     }
     [Command]
-    void CmdStartFuckinLAGS() {
-       // for (int i = 0; i < GameObject.FindGameObjectsWithTag("Player").Length; ++i) {
-       //     GameObject.FindGameObjectsWithTag("Player")[i].transform.parent = generator.platform.transform;
-       // }
+    void CmdStartMission() {
         generator.StartPlatform();
+    }
+    [Command]
+    void CmdEndMission() {
+        generator.GoBack();
     }
     [Command]
     void CmdSetNick(string nick) {
@@ -62,6 +69,10 @@ public class player : NetworkBehaviour
     [Command]
     void CmdDmg(int dmg) {
         hp = hp-dmg;
+    }
+    [Command]
+    void CmdIsDrop(bool isdrop) {
+        isDropToContainer = isdrop;
     }
     public void Attack()
     {
@@ -83,13 +94,12 @@ public class player : NetworkBehaviour
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
             CmdSetNick(GameObject.Find("network").GetComponent<customNetworkHUD>().nickname);
-            nickobject.gameObject.SetActive(false);
+            hpobject.gameObject.SetActive(false);
         }
         else {
             head.transform.GetChild(0).gameObject.SetActive(false);
         }
         rb = GetComponent<Rigidbody>();
-        nickobject.text = nickname;
     }
 
     // Update is called once per frame
@@ -116,15 +126,37 @@ public class player : NetworkBehaviour
             if (Input.GetKey(KeyCode.A)) { transform.Translate(Time.deltaTime * -0.1f * speed, 0, 0); }
             if (Input.GetKey(KeyCode.S)) { transform.Translate(0, 0, Time.deltaTime * -0.1f * speed); }
             if (Input.GetKey(KeyCode.D)) { transform.Translate(Time.deltaTime * 0.1f * speed, 0, 0); }
-            if (Input.GetKey(KeyCode.E) && seeContainer&&containercooldown<=0) {
-                for (int i = 0; i < resourcesCount.Count; ++i) {
-                    if (resourcesCount[i] > 0) {
-                        CmdAddResource(i, -1);
-                        generator.AddResource(i, 1);
-                        containercooldown = 0.1f;
-                        break;
+            if (Input.GetKey(KeyCode.E))
+            {
+                if (seeContainer && containercooldown <= 0)
+                {
+                    for (int i = 0; i < resourcesCount.Count; ++i)
+                    {
+                        if (resourcesCount[i] > 0)
+                        {
+                            CmdAddResource(i, -1);
+                            CmdIsDrop(true);
+                            generator.AddResource(i, 1);
+                            containercooldown = 0.1f;
+                            break;
+                        }
                     }
                 }
+                if (gobackinteraction)
+                {
+                    if (!generator.DropPhase)
+                    {
+                        CmdStartMission();
+                    }
+                    else
+                    {
+                        CmdEndMission();
+                    }
+                    gobackinteraction = false;
+                }
+            }
+            else {
+                CmdIsDrop(false);
             }
             if (Input.GetKeyDown(KeyCode.Space)) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
             if (Input.GetKey(KeyCode.Mouse0))
@@ -144,18 +176,27 @@ public class player : NetworkBehaviour
                     CmdSpawnFlare();
                 }
             }
-            if (Input.GetKeyDown(KeyCode.F12)) {
-                CmdStartFuckinLAGS();
+            if (Input.GetKeyDown(KeyCode.F12))
+            {
+                CmdStartMission();
             }
-            //контейнер
+
+
+            //взаимодействие
+            seeInteraction = false;
+            gobackinteraction = false;
             seeContainer = false;
             Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
             if (hit.transform)
             {
-             //   print(hit.transform.tag);
-                if (hit.transform.CompareTag("Container"))
+                if (hit.collider.transform.CompareTag("Container"))
                 {
                     seeContainer = true;
+                    seeInteraction = true;
+                }
+                if (hit.collider.transform.name == "redbutton") {
+                    seeInteraction = true;
+                    gobackinteraction = true;
                 }
             }
 
@@ -164,7 +205,7 @@ public class player : NetworkBehaviour
         }
         if (localhp != hp) {
             localhp = hp;
-            hpobject.text = "" + hp;
+            hpobject.text = nickname="\n" + hp;
         }
         if (generator.isPlatformStarted) { transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
         if (generator.isPlatformStopped) { transform.parent = null; }
@@ -219,7 +260,8 @@ public class player : NetworkBehaviour
             GUI.Box(new Rect(0, Screen.height - 25, 200, 25), "HP: " + hp);
             GUI.Box(new Rect(0, Screen.height - 50, 200, 25), "SPD: " + magnitude);
             GUI.Box(new Rect(Screen.width - 30, Screen.height - (50 - 50 * flarecooldown * 0.25f), 30, (50 - 50 * flarecooldown * 0.25f)), "f");
-            if (seeContainer) { GUI.Box(new Rect(Screen.width * 0.5f - 20, Screen.height * 0.5f + 60, 40, 40), "[E]"); }
+            if (seeInteraction) { GUI.Box(new Rect(Screen.width * 0.5f - 20, Screen.height * 0.5f + 60, 40, 40), "[E]"); }
+            if (gobackinteraction) { GUI.Box(new Rect(Screen.width * 0.5f - 30, Screen.height * 0.5f + 100, 60, 40), "Пуск"); }
         }
     }
 }
