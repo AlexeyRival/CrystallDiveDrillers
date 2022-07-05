@@ -65,9 +65,9 @@ public class marchingspace : MonoBehaviour
 
                     //первая пещера
                     if (
-                        f < 0 &&
-                            Vector3.Distance(gencenter, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 2 < 30
-                            && Mathf.Abs(gencenter.y - (y + transform.position.y)) + f < 15)
+                       //f < 0 &&
+                            Vector3.Distance(gencenter, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 4 < 20
+                            && Mathf.Abs(gencenter.y - (y + transform.position.y)) + f*2 < 10)
                     {
                         space[x, y, z] = true;
                     }
@@ -78,15 +78,15 @@ public class marchingspace : MonoBehaviour
                     //другие пещеры
 
                     for (int i = 0; i < cavepoints.Count; ++i) if (
-                            Vector3.Distance(cavepoints[i],new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z))+f*2<10
-                            &&Mathf.Abs(cavepoints[i].y-(y+transform.position.y))+f<5
+                            Vector3.Distance(cavepoints[i],new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z))+f*3<10
+                            &&Mathf.Abs(cavepoints[i].y-(y+transform.position.y))+f*2<5
                             //(Mathf.Pow(x + transform.position.x - cavepoints[i].x, 2) + Mathf.Pow((y + transform.position.y - cavepoints[i].y) * 2f, 2) + Mathf.Pow(z + transform.position.z - cavepoints[i].z, 2) + f < 10 * 10)
                             )
                         {
                         space[x, y, z] =true;
                     }
                     for (int i = 0; i < tunnelpoints.Count; ++i) if (
-                            Vector3.Distance(tunnelpoints[i], new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 2 < 6
+                            Vector3.Distance(tunnelpoints[i], new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 2 < 4
                             //(Mathf.Pow(x + transform.position.x - tunnelpoints[i].x, 2) + Mathf.Pow((y + transform.position.y - tunnelpoints[i].y) * 2f, 2) + Mathf.Pow(z + transform.position.z - tunnelpoints[i].z, 2) + f < 5 * 5)
                             )
                         {
@@ -94,47 +94,78 @@ public class marchingspace : MonoBehaviour
                     }
 
                     //руды
+                    if (
+                        (x!=0 &&y != 0&&z != 0 && x != sizeX - 1 && y != sizeY - 1 && z != sizeZ - 1) &&
+                        !space[x, y, z] && (space[x + 1, y, z] | space[x - 1, y, z] | space[x, y + 1, z] | space[x, y - 1, z] | space[x, y, z + 1] | space[x, y, z - 1]))
+                    {
+                        //герит
+                        if (//f < 0.0001f && f > -0.0001f &&
+                            sf > 0.4f && sf < 0.6f &&
+                            f > 0.3f &&f < 0.6f &&
+                            mineralscount[0] > 0)
+                        {
+                            ob = Instantiate(resources[0].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+                            ob.name = resources[0].id.ToString();
+                            --mineralscount[0];
+                        }
 
-                    //герит
-                    if (f < 0.0001f && f > -0.0001f &&
-                        sf > 0.5f&&
-                        (Mathf.Pow(x + transform.position.x - Generator.center.x, 2) + Mathf.Pow(y + transform.position.y - Generator.center.y, 2) + Mathf.Pow(z + transform.position.z - Generator.center.z, 2) < 30 * 30)&&
-                        mineralscount[0]>0) {
-                        ob = Instantiate(resources[0].orePrefab,new Vector3(x+transform.position.x,y+transform.position.y,z+transform.position.z),Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
-                        ob.name = resources[0].id.ToString();
-                        --mineralscount[0];
+                        //греадит
+                        if (//f < 0.0001f && f > -0.0001f &&
+                            sf > 0.2f && sf < 0.5f && 
+                            f>0.7f&&
+                            mineralscount[1] > 0)
+                        {
+                            ob = Instantiate(resources[1].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+                            ob.name = resources[1].id.ToString();
+                            --mineralscount[1];
+                        }
+
+                        //Нирр
+                        if (//f < 0.0001f && f > -0.0001f &&
+                            sf > -0.5f && sf < -0.35f &&
+                            f > 0f && f < 0.3f &&
+                            mineralscount[2] > 0)
+                        {
+                            ob = Instantiate(resources[2].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+                            ob.name = resources[2].id.ToString();
+                            --mineralscount[2];
+                        }
                     }
-
-                    //греадит
-                    if (f < 0.0001f && f > -0.0001f &&
-                        sf < 0.5f && sf > 0f &&
-                        (Mathf.Pow(x + transform.position.x - Generator.center.x, 2) + Mathf.Pow(y + transform.position.y - Generator.center.y, 2) + Mathf.Pow(z + transform.position.z - Generator.center.z, 2) < 30 * 30)&&
-                        mineralscount[1]>0) {
-                        ob = Instantiate(resources[1].orePrefab, new Vector3(x+transform.position.x,y+transform.position.y,z+transform.position.z),Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
-                        ob.name = resources[1].id.ToString();
-                        --mineralscount[1];
-                    }
-
-                    //Нирр
-                    if (f < 0.0001f && f > -0.0001f &&
-                        sf < 0f && sf >-0.5f&&
-                        (Mathf.Pow(x + transform.position.x - Generator.center.x, 2) + Mathf.Pow(y + transform.position.y - Generator.center.y, 2) + Mathf.Pow(z + transform.position.z - Generator.center.z, 2) < 30 * 30)&&
-                        mineralscount[2]>0) {
-                        ob = Instantiate(resources[2].orePrefab, new Vector3(x+transform.position.x,y+transform.position.y,z+transform.position.z),Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
-                        ob.name = resources[2].id.ToString();
-                        --mineralscount[2];
-                    }
-
                     //центр всего
-                    if (f < -0.99f &&
-                        (Mathf.Pow(x + transform.position.x - Generator.center.x, 2) + Mathf.Pow(y + transform.position.y - Generator.center.y, 2) + Mathf.Pow(z + transform.position.z - Generator.center.z, 2) < 30 * 30)
+                    if (
+                            Vector3.Distance(gencenter, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 2 < 15
+                            && Mathf.Abs(gencenter.y - (y + transform.position.y)) + f < 8
+                            &&f<0.5f&&f>-0.5f
+                        //f < -0.99f &&
+                        //(Mathf.Pow(x + transform.position.x - Generator.center.x, 2) + Mathf.Pow(y + transform.position.y - Generator.center.y, 2) + Mathf.Pow(z + transform.position.z - Generator.center.z, 2) < 30 * 30)
                         && !maxpoint)
                     {
                         generator.startpoints.Add(new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z));
+                        maxpoint = true;
+                    }
+
+                    //сетка навигации
+
+                }
+        int borders,matches;
+        for (x = 0; x < sizeX; ++x)
+            for (y = 0; y < sizeY; ++y)
+                for (z = 0; z < sizeZ; ++z)
+                {
+                    borders = ((x == 0) ? 1 : 0) + ((x == sizeX - 1) ? 1 : 0) + ((y == 0) ? 1 : 0) + ((y == sizeY - 1) ? 1 : 0) + ((z == 0) ? 1 : 0) + ((z == sizeZ - 1) ? 1 : 0);
+                    matches = ((x == 0 || !space[x - 1, y, z]) ? 1 : 0) + ((x == sizeX - 1 || !space[x + 1, y, z])?1:0)
+                        + ((y == 0 || !space[x, y-1, z]) ? 1 : 0) + ((y == sizeY - 1 || !space[x, y+1, z]) ? 1 : 0)
+                        + ((z == 0 || !space[x, y, z-1]) ? 1 : 0) + ((z == sizeZ - 1 || !space[x, y, z+1]) ? 1 : 0);
+                    if (
+          //  (x != 0 && y != 0 && z != 0 && x != sizeX - 1 && y != sizeY - 1 && z != sizeZ - 1) &&
+          //  space[x, y, z] && !(space[x + 1, y, z] & space[x - 1, y, z] & space[x, y + 1, z] & space[x, y - 1, z] & space[x, y, z + 1] & space[x, y, z - 1]))
+                    space[x,y,z]&&(matches>0&&matches>borders))
+                    {
+                        generator.walkpoints.Add(new Generator.walkpoint(new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)));
                     }
                 }
         //for (int i = 0; i < Random.Range(15, 30); ++i) {
-            //Instantiate(ore, new Vector3(Random.Range(0, sizeX)*step, Random.Range(0, sizeY) * step, Random.Range(0, sizeZ) * step)+transform.position, Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+        //Instantiate(ore, new Vector3(Random.Range(0, sizeX)*step, Random.Range(0, sizeY) * step, Random.Range(0, sizeZ) * step)+transform.position, Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
         //}
 
     }

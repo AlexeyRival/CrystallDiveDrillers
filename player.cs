@@ -41,6 +41,10 @@ public class player : NetworkBehaviour
         NetworkServer.Spawn(ob);
     }
     [Command]
+    void CmdMoveMarker(Vector3 pos) {
+        generator.MoveMuleMarker(pos);
+    }
+    [Command]
     void CmdSpawnFlare() {
         GameObject ob= Instantiate(flare, head.transform.position, head.transform.rotation);
         ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20,ForceMode.Impulse);
@@ -50,7 +54,7 @@ public class player : NetworkBehaviour
     [Command]
     void CmdAddResource(int id,int amout) {
         resourcesCount[id]+=amout;
-        if (amout < 0) {
+        if(!isLocalPlayer)if (amout < 0) {
             generator.AddResource(id, -amout);
         }
     }
@@ -76,14 +80,11 @@ public class player : NetworkBehaviour
     }
     public void Attack()
     {
-        if (isLocalPlayer)
-        {
             Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
             if (hit.transform)
             {
                 CmdSpawnDestroyer(hit.point);
             }
-        }
     }
     void Start()
     {
@@ -174,6 +175,14 @@ public class player : NetworkBehaviour
                 {
                     flarecooldown = 4f;
                     CmdSpawnFlare();
+                }
+            }
+            if (Input.GetKeyDown(KeyCode.C))
+            {
+                Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
+                if (hit.transform)
+                {
+                    CmdMoveMarker(hit.point);
                 }
             }
             if (Input.GetKeyDown(KeyCode.F12))

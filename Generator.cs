@@ -10,6 +10,7 @@ public class Generator : NetworkBehaviour
     public int sizeZ = 2;
     public GameObject platform,undestroyableground;
     public GameObject cluster;
+    public GameObject mule, mulemarker;
     public ChunkManager manager;
     public static bool isWorking;
     public static Vector3 center;
@@ -24,6 +25,15 @@ public class Generator : NetworkBehaviour
     private string funnyname;
     private int addingresourcecount, addingresourceid;
     private bool isaddingresource;
+    //поиск пути
+    public List<walkpoint> walkpoints;
+    public Vector3 pathendpoint,pathstartpoint;
+    public List<int> path;
+
+    //дела отладочные
+    private bool isShowDebugPathFinding;
+    
+    //сеть
     [SyncVar]
     public bool DropPhase = false;
     [SyncVar]
@@ -39,6 +49,13 @@ public class Generator : NetworkBehaviour
         isPlatformStopped = isStopped;
         isPlatformBack = isBack;
     }
+    public void CmdMoveMuleMarker(Vector3 newpos) {
+        mulemarker.transform.position = newpos;
+        pathendpoint = newpos;
+        pathstartpoint = mule.transform.position;
+        List<Vector3> bufferpath = CalculatePath();
+        mule.GetComponent<mule>().SetPath(bufferpath);
+    }
     [Command]
     public void CmdSetDropPhase(bool phase) {
         DropPhase = phase;
@@ -51,8 +68,88 @@ public class Generator : NetworkBehaviour
         CmdAddResource(id, amout);
     }
     
-    // Start is called before the first frame update
-    IEnumerator Start()
+    public void MoveMuleMarker(Vector3 newpos) {
+        CmdMoveMuleMarker(newpos); 
+    }
+
+    private List<int> walkpointspool;
+    private List<Vector3> CalculatePath()
+    {
+        walkpointspool = new List<int>();
+        for (int i = 0; i < walkpoints.Count; ++i)
+        {
+            if (Vector3.Distance(walkpoints[i].position, pathendpoint) < 2f)
+            {
+                walkpoints[i].weight = Vector3.Distance(walkpoints[i].position, pathendpoint);
+                walkpointspool.AddRange(walkpoints[i].friends);
+            }
+            else {
+                walkpoints[i].weight = 0;
+            }
+        }
+        bool grandbreak=false;
+        int finallid = 0;
+        for (int k = 0; k < 200; ++k)
+        {
+            List<int> buffrepool = walkpointspool;
+            walkpointspool = new List<int>();
+            for (int i = 0; i < buffrepool.Count; ++i)
+            {
+                if (Vector3.Distance(walkpoints[buffrepool[i]].position, pathstartpoint) < 2f) { finallid = buffrepool[i]; grandbreak = true;break; }
+                if (walkpoints[buffrepool[i]].weight != 0) {
+                    CheckFriends(walkpoints[buffrepool[i]]);
+                }
+            }
+            if (grandbreak) break;
+        }
+        path = new List<int>();
+        CalculatePathList(walkpoints[finallid]);
+        List<Vector3> outputpath = new List<Vector3>();
+        for (int i = 0; i < path.Count; ++i) { outputpath.Add(walkpoints[path[i]].position); }
+        return outputpath;
+    }
+    private float min;
+    public bool CalculatePathList(walkpoint point) {
+        if (point.weight < 2f) { return true; }
+        for (int i = 0; i < point.friends.Count; ++i) {
+            if (walkpoints[point.friends[i]].weight < point.weight) {
+                path.Add(point.friends[i]);
+                if (CalculatePathList(walkpoints[point.friends[i]])) { return true; }
+            }
+        }
+        return false;
+    }
+    public void CheckFriends(walkpoint point)
+    {
+        for (int i = 0; i < point.friends.Count; ++i) if (walkpoints[point.friends[i]].weight == 0)
+            {
+                walkpoints[point.friends[i]].weight = point.weight+ Vector3.Distance(point.position, walkpoints[point.friends[i]].position);
+                walkpointspool.AddRange(walkpoints[point.friends[i]].friends);
+            }
+    }
+
+    void CalculateFriends() {
+        for (int i = 0; i < walkpoints.Count; ++i) {
+            for (int ii = 0; ii < walkpoints.Count; ++ii) if (i != ii) {
+                    if (Vector3.Distance(walkpoints[i].position, walkpoints[ii].position) < 1.5f) {
+                        walkpoints[i].friends.Add(ii);
+                    }
+                }
+        }
+    }
+
+    public class walkpoint {
+        public Vector3 position;
+        public List<int> friends;
+        public float weight;
+        public bool isBlocked;
+        public walkpoint(Vector3 position) {
+            this.position = position;
+            friends = new List<int>();
+        }
+    }
+        // Start is called before the first frame update
+        IEnumerator Start()
     {
         //resourcesCount = new SyncListInt();
         if (isServer) { 
@@ -61,23 +158,40 @@ public class Generator : NetworkBehaviour
         }
         Random.seed = seed;
         center = new Vector3((sizeX) * 57 / 2, (sizeY) * 57 / 2, (sizeZ-1) * 57 / 2);
+        walkpoints = new List<walkpoint>();
+        path = new List<int>();
         startpoints = new List<Vector3>();
         cavepoints = new List<Vector3>();
         tunnelpoints = new List<Vector3>();
+        Vector3 walker;
         for (int i = 0; i < 3; ++i)
         {
             Vector3 vec = new Vector3();
-            vec.y = Random.Range(0, sizeY * 3) * 19 + 9;
-            vec.x = Random.Range(0, sizeX * 3) * 19 + 9;
-            vec.z = Random.Range(0, sizeZ * 3) * 19 + 9;
+            vec.y = Random.Range(1, sizeY * 3-1) * 19 + 9;
+            vec.x = Random.Range(1, sizeX * 3-1) * 19 + 9;
+            vec.z = Random.Range(1, sizeZ * 3-1) * 19 + 9;
             cavepoints.Add(vec);
 
-            Vector3 walker = vec;
+            walker = vec;
             for (int ii = 0; ii < 25; ++ii)
             {
                 if (Vector3.Distance(walker, center) < 13) { break; }
-                    walker +=new Vector3(Random.Range(-3, 3), Random.Range(-3, 3), Random.Range(-3, 3)); 
+                    walker +=new Vector3(Random.Range(-2, 2), Random.Range(-2, 2), Random.Range(-2, 2)); 
                 walker -= (walker-center) / 15;
+                tunnelpoints.Add(walker);
+            }
+        }
+        for (int i = 0; i < 4; ++i)
+        {
+            Vector3 secondcave = new Vector3(Random.Range(1, sizeX * 3 - 1) * 19 + 9, Random.Range(1, sizeY * 3 - 1) * 19 + 9, Random.Range(1, sizeZ * 3 - 1) * 19 + 9);
+            int buftrgt = Random.Range(0, cavepoints.Count);
+            cavepoints.Add(secondcave);
+            walker = secondcave;
+            for (int ii = 0; ii < 30+ (Vector3.Distance(secondcave, cavepoints[buftrgt])-50)/3; ++ii)
+            {
+                if (Vector3.Distance(walker, cavepoints[buftrgt]) < 4) { break; }
+                walker += new Vector3(Random.Range(-2, 2), Random.Range(-1, 1), Random.Range(-2, 2));
+                walker -= (walker - cavepoints[buftrgt]) / 15;
                 tunnelpoints.Add(walker);
             }
         }
@@ -89,6 +203,7 @@ public class Generator : NetworkBehaviour
             questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
         }
         yield return GenerateClusters();
+        CalculateFriends();
     }
     IEnumerator GenerateClusters() {
         List<GameObject> objs = new List<GameObject>();
@@ -118,6 +233,7 @@ public class Generator : NetworkBehaviour
         try
         {
             startpoint = startpoints[Random.Range(0, startpoints.Count)];
+            mule.transform.position = startpoints[Random.Range(0, startpoints.Count)];
         }
         catch { throw new System.Exception("BadSeedException"); }
         RaycastHit hit;
@@ -129,6 +245,12 @@ public class Generator : NetworkBehaviour
             Instantiate(undestroyableground,startpoint,Quaternion.identity);
             platform.transform.position = new Vector3(startpoint.x, platform.transform.position.y, startpoint.z);
             CmdSetPlatformMoving(true,false,false);
+        }
+        Physics.Raycast(mule.transform.position, - Vector3.up, out hit, 100);
+        Debug.DrawRay(mule.transform.position, - Vector3.up, Color.red, 100f);
+        if (hit.transform)
+        {
+            mule.transform.position = hit.point;
         }
         else {
             throw new System.Exception("BadSeedException");
@@ -179,8 +301,7 @@ public class Generator : NetworkBehaviour
             CmdAddResource(addingresourceid, addingresourcecount);
             isaddingresource = false;
         }
-        if (isServer) {
-        }
+        if (Input.GetKeyDown(KeyCode.F3)) { isShowDebugPathFinding = !isShowDebugPathFinding; }
     }
     private void OnDrawGizmos()
     {
@@ -194,6 +315,27 @@ public class Generator : NetworkBehaviour
         Gizmos.color = new Color(0.8f, 0, 0.4f);
         for (int i = 0; i < tunnelpoints.Count; ++i) { 
             Gizmos.DrawWireSphere(tunnelpoints[i], 2);
+        }
+        if (isShowDebugPathFinding) {
+            Gizmos.color = new Color(0, 0.4f, 0.8f);
+            for (int i = 0; i < walkpoints.Count; ++i)
+            {
+                if (walkpoints[i].weight != 0)
+                {
+                    Gizmos.color = new Color(0.4f, 0.8f*0.01f*walkpoints[i].weight, 0);
+                }
+                Gizmos.DrawCube(walkpoints[i].position, new Vector3(0.5f, 0.5f, 0.5f));
+                Gizmos.color = new Color(0, 0.4f, 0.8f);
+            }
+            Gizmos.color = new Color(0.6f, 0, 0.6f);
+            for (int i = 0; i < path.Count; ++i)
+            {
+                Gizmos.DrawCube(walkpoints[path[i]].position, new Vector3(0.6f, 0.6f, 0.6f));
+            }
+            Gizmos.color = new Color(0.4f, 0.8f,0);
+            Gizmos.DrawCube(pathstartpoint, new Vector3(0.5f, 0.5f, 0.5f));
+            Gizmos.color = new Color( 0.8f, 0.4f,0);
+            Gizmos.DrawCube(pathendpoint, new Vector3(0.5f, 0.5f, 0.5f));
         }
     }
     private int guishift;
