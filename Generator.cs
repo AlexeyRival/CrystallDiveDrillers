@@ -1,6 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.Networking;
 
 public class Generator : NetworkBehaviour
@@ -8,7 +9,7 @@ public class Generator : NetworkBehaviour
     public int sizeX = 2;    
     public int sizeY = 2;
     public int sizeZ = 2;
-    public GameObject platform,undestroyableground;
+    public GameObject platform, undestroyableground, blackscreen;
     public GameObject cluster;
     public GameObject mule, mulemarker;
     public ChunkManager manager;
@@ -19,144 +20,307 @@ public class Generator : NetworkBehaviour
     public List<Vector3> tunnelpoints;
     public List<Resource> resources;
     private int generatedchunks = 0;
-    public bool isGeneratingCompleted;
+    private int generatedfriends = 0;
+    private int generatingphase = 0;
+    public bool isGeneratingCompleted, isStart;
     private questtype currentquest;
-    private int questtarget, questparam, questprogress;
+    private int questtarget, questparam;
     private string funnyname;
     private int addingresourcecount, addingresourceid;
     private bool isaddingresource;
+
+    //UI
+    public GameObject UI,UIInventory, Currentmission;
+    public RawImage resourcePic;
+    public Image missionpic;
+    public Image missiondifpic;
+    public Text missionName;
+    public Text missiontype;
+    public GameObject loading;
+    private int localseed;
+
     //поиск пути
     public List<walkpoint> walkpoints;
     public Vector3 pathendpoint,pathstartpoint;
     public List<int> path;
+
+    //выбор миссии
+    //public bool isMissionMenuOpened;
+    public MissionMenuController missioncontroller;
+    [SyncVar]
+    public int questdifficulty;
+    [SyncVar]
+    private bool deleteitall;
+    private bool deleteitalllocal;
+    private Vector3 startplatfromposition;
 
     //дела отладочные
     private bool isShowDebugPathFinding;
     
     //сеть
     [SyncVar]
-    public bool DropPhase = false;
-    [SyncVar]
     public SyncListInt resourcesCount;
     [SyncVar]
-    public bool isPlatformStarted = false, isPlatformStopped,isPlatformBack;
+    public int platformstatus = 0;
+    //public bool isPlatformStarted = false, isPlatformStopped,isPlatformBack;
     private Vector3 startpoint;
     [SyncVar]
     public int seed;
+    [SyncVar]
+    public bool isStartGenerate;
     [Command]
-    public void CmdSetPlatformMoving(bool isStarted,bool isStopped,bool isBack) {
+    public void CmdSetPlarformStatus(int status) {
+        platformstatus = status;
+    }//0 - платформа на базе, 1 - платформа едет вниз, 2 - платформа стоит ждёт, 3 - платформа едет наверх
+    /*public void CmdSetPlatformMoving(bool isStarted,bool isStopped,bool isBack) {
         isPlatformStarted = isStarted;
         isPlatformStopped = isStopped;
         isPlatformBack = isBack;
-    }
+    }*/
     public void CmdMoveMuleMarker(Vector3 newpos) {
         mulemarker.transform.position = newpos;
-        pathendpoint = newpos;
-        pathstartpoint = mule.transform.position;
+        pathendpoint = mule.transform.position;//newpos;//
+        pathstartpoint = newpos; //mule.transform.position;//
         List<Vector3> bufferpath = CalculatePath();
         mule.GetComponent<mule>().SetPath(bufferpath);
-    }
-    [Command]
-    public void CmdSetDropPhase(bool phase) {
-        DropPhase = phase;
     }
     [Command]
     public void CmdAddResource(int id, int amout) {
         resourcesCount[id] += amout;
     }
+    [Command]
+    public void CmdSetSeed(int newseed) {
+        seed = newseed;
+    }
+    [Command]
+    public void CmdSwitchDelete() {
+        deleteitall = !deleteitall;
+        for (int i = 0; i < resources.Count; ++i) {
+            resourcesCount[i] = 0;
+        }
+        walkpoints = new List<walkpoint>();
+    }
     public void AddResource(int id, int amout) {
-        CmdAddResource(id, amout);
+        if(platformstatus==2)CmdAddResource(id, amout);
     }
     
     public void MoveMuleMarker(Vector3 newpos) {
         CmdMoveMuleMarker(newpos); 
     }
 
-    private List<int> walkpointspool;
-    private List<Vector3> CalculatePath()
+    private Dictionary<string, float> revivePoints;
+    //возрождение и всё что с ним связано
+    public void AddRevivePoints(string name,float amout) {
+        if (!revivePoints.ContainsKey(name)) { print(name); }
+        revivePoints[name] += amout;
+    }
+    public bool GetAlive(string name) {
+        return revivePoints[name] >= 100;
+    }
+    public void AddDeathPlayer(string name) {
+        revivePoints.Add(name,0);
+    }
+    [Command]
+    public void CmdSetDifficulty(int value) {
+        questdifficulty = value;
+    }
+    public void SetDifficulty(int value) {
+        if (isServer) { CmdSetDifficulty(value); }
+    }
+    private void UpdateResources()
     {
-        walkpointspool = new List<int>();
-        for (int i = 0; i < walkpoints.Count; ++i)
+        int xshift;
+        int activecount = 0;
+        for (int i = 0; i < resourcesCount.Count; ++i)
         {
-            if (Vector3.Distance(walkpoints[i].position, pathendpoint) < 2f)
+            UIInventory.transform.GetChild(i).gameObject.SetActive(resourcesCount[i] > 0);
+            if (resourcesCount[i] > 0)
             {
-                walkpoints[i].weight = Vector3.Distance(walkpoints[i].position, pathendpoint);
-                walkpointspool.AddRange(walkpoints[i].friends);
-            }
-            else {
-                walkpoints[i].weight = 0;
+                UIInventory.transform.GetChild(i).GetChild(1).GetComponent<Text>().text = resourcesCount[i].ToString();
+                ++activecount;
             }
         }
-        bool grandbreak=false;
-        int finallid = 0;
-        for (int k = 0; k < 200; ++k)
+        int iter = 0;
+        for (int i = 0; i < resourcesCount.Count; ++i)
         {
-            List<int> buffrepool = walkpointspool;
-            walkpointspool = new List<int>();
-            for (int i = 0; i < buffrepool.Count; ++i)
+            if (resourcesCount[i] > 0)
             {
-                if (Vector3.Distance(walkpoints[buffrepool[i]].position, pathstartpoint) < 2f) { finallid = buffrepool[i]; grandbreak = true;break; }
-                if (walkpoints[buffrepool[i]].weight != 0) {
-                    CheckFriends(walkpoints[buffrepool[i]]);
+                UIInventory.transform.GetChild(i).transform.localPosition = new Vector3(0,iter * -40, 0);
+                ++iter;
+            }
+        }
+    }
+    private void ActualiseMission() {
+        Currentmission.SetActive(true);
+        Currentmission.transform.Find("Name").GetComponent<Text>().text = funnyname;
+        Currentmission.transform.Find("Type Pic").GetComponent<Image>().sprite = missioncontroller.missiontypes[(int)currentquest].icon;
+        Currentmission.transform.Find("Difficulty Pic").GetComponent<Image>().sprite = missioncontroller.difficulties[questdifficulty].icon;
+        if (currentquest == questtype.Добыча) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = resources[questtarget].materialName + " - " + resourcesCount[questtarget] + "/" + questparam; }
+    }
+    private void CloseMission() {
+        //TODO начисление опыта
+        Currentmission.SetActive(false);
+    }
+    public List<Vector3> CalculatePath() {
+        List<Vector3> outpath = new List<Vector3>();
+        marchingspace endchunk=manager.marchingspaces[0];
+        Vector3 thispathendpoint=pathendpoint;
+
+        bool grandbreakend=false,grandbreakstart=false;
+        bool grandbreak = false;
+        Dictionary<string, bool> isCalculated = new Dictionary<string, bool>();
+        Vector3 resault = new Vector3(-1, -1, -1);
+        for (int i = 0; i < manager.marchingspaces.Length; ++i) {
+            manager.marchingspaces[i].ClearWeights();
+        }
+        for (int i = 0; i < manager.marchingspaces.Length; ++i)
+        {
+            foreach (var point in manager.marchingspaces[i].walkpoints) {
+                //if (Vector3.Distance(point.Key, pathendpoint)<2) {
+                if (FastDist(point.Key, pathendpoint, 4)) {
+                    isCalculated[manager.marchingspaces[i].name] = true;
+                    point.Value.weight = 1;
+                    resault = manager.marchingspaces[i].CalculateWeights(pathstartpoint);
+                    thispathendpoint = point.Key;
+                    endchunk = manager.marchingspaces[i];
+                    grandbreak = true;
+                    Debug.DrawLine(point.Key, pathendpoint, new Color(0.6f, 0.2f, 0), 10f);
+                    break;
                 }
             }
-            if (grandbreak) break;
+            if (grandbreak) { break; }
         }
-        path = new List<int>();
-        CalculatePathList(walkpoints[finallid]);
-        List<Vector3> outputpath = new List<Vector3>();
-        for (int i = 0; i < path.Count; ++i) { outputpath.Add(walkpoints[path[i]].position); }
-        return outputpath;
-    }
-    private float min;
-    public bool CalculatePathList(walkpoint point) {
-        if (point.weight < 2f) { return true; }
-        for (int i = 0; i < point.friends.Count; ++i) {
-            if (walkpoints[point.friends[i]].weight < point.weight) {
-                path.Add(point.friends[i]);
-                if (CalculatePathList(walkpoints[point.friends[i]])) { return true; }
+        int updatedchunks = 0,previosupdated=-1;
+        grandbreak = false;
+        if(resault==new Vector3(-1,-1,-1))for (int k = 0; k < sizeX * 10; ++k) {//должно хватить
+            updatedchunks = 0;
+            for (int i = 0; i < manager.marchingspaces.Length; ++i) if(isCalculated.ContainsKey(manager.marchingspaces[i].name)){
+                        for (int ii = 0; ii < manager.marchingspaces[i].friends.Count; ++ii) if (!isCalculated.ContainsKey(manager.marchingspaces[i].friends[ii].name))
+                            {
+                                isCalculated[manager.marchingspaces[i].friends[ii].name] = true;
+                                resault = manager.marchingspaces[i].friends[ii].CalculateWeights(pathstartpoint);
+                                ++updatedchunks;
+                                if (resault != new Vector3(-1, -1, -1))
+                                {
+                                    endchunk = manager.marchingspaces[i].friends[ii];
+                                    grandbreak = true; break;
+                                }
+                            }
+                    if (grandbreak) { break; }
             }
+            if (previosupdated == updatedchunks||grandbreak) { break; }
+            previosupdated = updatedchunks;
         }
-        return false;
-    }
-    public void CheckFriends(walkpoint point)
-    {
-        for (int i = 0; i < point.friends.Count; ++i) if (walkpoints[point.friends[i]].weight == 0)
-            {
-                walkpoints[point.friends[i]].weight = point.weight+ Vector3.Distance(point.position, walkpoints[point.friends[i]].position);
-                walkpointspool.AddRange(walkpoints[point.friends[i]].friends);
-            }
-    }
 
-    void CalculateFriends() {
-        for (int i = 0; i < walkpoints.Count; ++i) {
-            for (int ii = 0; ii < walkpoints.Count; ++ii) if (i != ii) {
-                    if (Vector3.Distance(walkpoints[i].position, walkpoints[ii].position) < 1.5f) {
-                        walkpoints[i].friends.Add(ii);
+        print(resault);
+        Debug.DrawRay(resault, Vector3.up, Color.white, 10f);
+        Debug.DrawRay(thispathendpoint, Vector3.up, Color.grey, 10f);
+        outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
+        Debug.DrawLine(endchunk.center, resault, Color.cyan, 10f);
+        if (outpath.Count>0) {
+            for (int i = 0; i < outpath.Count; ++i) {
+                Debug.DrawRay(outpath[i],Vector3.up,Color.magenta,10f);
+            }
+        }
+        else
+        {
+            print(":(");
+        }
+        return outpath;
+    }
+    public List<Vector3> CalculatePoint(marchingspace ms,walkpoint point, Vector3 target)
+    {
+        List<Vector3> outlist = new List<Vector3>();
+        //if (FastDist(point.position,target,4)) {
+        if (point.position == target) {
+            outlist.Add(point.position);
+            return outlist;
+        }
+        for (int i = 0; i < point.friends.Count; ++i)
+        {
+            if(ms.walkpoints.ContainsKey(point.friends[i]))if (ms.walkpoints[point.friends[i]].weight < point.weight)
+            {
+                outlist = CalculatePoint(ms, ms.walkpoints[point.friends[i]], target);
+                if (outlist.Count != 0) {
+                    outlist.Add(point.position);
+                    return outlist;
+                }
+            }
+        }
+
+        //print(ms.friends.Count + ":" + point.friends.Count);
+        /*for (int ii = 0; ii < point.friends.Count; ++ii)if(!ms.walkpoints.ContainsKey(point.friends[ii]))
+        {
+            for (int i = 0; i < ms.friends.Count; ++i) {
+                if (ms.friends[i].walkpoints.ContainsKey(point.friends[ii])) {
+         //           print(ms.friends[i].walkpoints[point.friends[ii]].weight);
+                    if (ms.friends[i].walkpoints[point.friends[ii]].weight < point.weight) {
+                        //Debug.DrawRay(point.friends[ii], Vector3.up * 3, Color.cyan, 10f);
+                        outlist = CalculatePoint(ms.friends[i], ms.friends[i].walkpoints[point.friends[ii]], target);
+                        if (outlist.Count != 0)
+                        {
+                            outlist.Add(point.position);
+                            return outlist;
+                        }
                     }
                 }
+            }*/
+            for (int i = 0; i < ms.friends.Count; ++i) {
+            for (int ii = 0; ii < marchingspace.neighborsTable.Length; ++ii)
+            {
+                if (ms.friends[i].walkpoints.ContainsKey(point.position + marchingspace.neighborsTable[ii]))
+                {
+                    if (ms.friends[i].walkpoints[point.position + marchingspace.neighborsTable[ii]].weight < point.weight)
+                    {
+                        outlist = CalculatePoint(ms.friends[i], ms.friends[i].walkpoints[point.position + marchingspace.neighborsTable[ii]], target);
+                        if (outlist.Count != 0)
+                        {
+                            outlist.Add(point.position);
+                            return outlist;
+                        }
+                    }
+                }
+            }
+            
+        }
+        return outlist;
+    }
+    public class walkpoint {
+        public Vector3 position;
+        public List<Vector3> friends;
+        public float weight;
+        public Dictionary<string, float> trails;
+        public walkpoint(Vector3 position) {
+            this.position = position;
+            friends = new List<Vector3>();
+            trails = new Dictionary<string, float>();
         }
     }
 
-    public class walkpoint {
-        public Vector3 position;
-        public List<int> friends;
-        public float weight;
-        public bool isBlocked;
-        public walkpoint(Vector3 position) {
-            this.position = position;
-            friends = new List<int>();
-        }
-    }
-        // Start is called before the first frame update
-        IEnumerator Start()
+
+
+    public void StartMission()
     {
+        isStartGenerate = true;
+    }
+        IEnumerator Generate()
+        {
+        while (!isStart) { yield return new WaitForEndOfFrame(); }
+        blackscreen.SetActive(true);
+        loading.SetActive(true);
         //resourcesCount = new SyncListInt();
-        if (isServer) { 
-            seed = Random.Range(0, int.MaxValue);
-            for (int i = 0; i < resources.Count; ++i) { resourcesCount.Add(0); }
+        if (isServer) {
+            //seed = Random.Range(0, int.MaxValue);
+            //seed = inputseed;
         }
         Random.seed = seed;
+        funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
+        currentquest = (questtype)Random.Range(0, 1);
+        if (currentquest == questtype.Добыча)
+        {
+            questtarget = Random.Range(0, resources.Count);
+            questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
+        }
         center = new Vector3((sizeX) * 57 / 2, (sizeY) * 57 / 2, (sizeZ-1) * 57 / 2);
         walkpoints = new List<walkpoint>();
         path = new List<int>();
@@ -195,15 +359,30 @@ public class Generator : NetworkBehaviour
                 tunnelpoints.Add(walker);
             }
         }
-        //квест
-        funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
-        currentquest = (questtype)Random.Range(0, 1);
-        if (currentquest == questtype.Добыча) {
-            questtarget = Random.Range(0, resources.Count);
-            questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
-        }
         yield return GenerateClusters();
-        CalculateFriends();
+        yield return new WaitForEndOfFrame();
+        generatingphase = 1;
+    //    if(isServer) yield return CalculateFriends();
+        isGeneratingCompleted = true;
+        blackscreen.SetActive(false);
+        loading.SetActive(false);
+    }
+    IEnumerator Start()
+    {
+        revivePoints = new Dictionary<string, float>();
+        if (isServer)
+        {
+            for (int i = 0; i < resources.Count; ++i) { resourcesCount.Add(0); }
+        }
+        while (true) {
+            if (!isStart)
+            {
+                yield return Generate();
+            }
+            else {
+                yield return new WaitForEndOfFrame();
+            }
+        }
     }
     IEnumerator GenerateClusters() {
         List<GameObject> objs = new List<GameObject>();
@@ -216,6 +395,7 @@ public class Generator : NetworkBehaviour
                 {
                     ob = Instantiate(cluster, new Vector3(x, y, z) * 57, Quaternion.identity);
                     for (int i = 0; i < ob.transform.childCount; ++i) {
+                        ob.transform.GetChild(i).gameObject.name = $"{x}:{y}:{z}:{i}";
                         objs.Add(ob.transform.GetChild(i).gameObject);
                     }
                     ++generatedchunks;
@@ -223,28 +403,24 @@ public class Generator : NetworkBehaviour
                 }
             }
         }
-        isGeneratingCompleted = true;
         manager.transform.gameObject.SetActive(true);
         manager.chunks = objs.ToArray();
         manager.Recalculate();
     }
     public void StartPlatform() {
-        CmdSetDropPhase(true);
-        try
-        {
-            startpoint = startpoints[Random.Range(0, startpoints.Count)];
-            mule.transform.position = startpoints[Random.Range(0, startpoints.Count)];
-        }
-        catch { throw new System.Exception("BadSeedException"); }
+        startplatfromposition = platform.transform.position;
+        int spid = Random.Range(0, startpoints.Count);
+            startpoint = startpoints[spid];
+        mule.transform.position = startpoints[(spid + Random.Range(1, startpoints.Count)) % startpoints.Count];
         RaycastHit hit;
         Physics.Raycast(startpoint, - Vector3.up, out hit, 100);
         Debug.DrawRay(startpoint, - Vector3.up, Color.red, 100f);
         if (hit.transform)
         {
             startpoint= hit.point;
-            Instantiate(undestroyableground,startpoint,Quaternion.identity);
+       //     Instantiate(undestroyableground,startpoint,Quaternion.identity);
             platform.transform.position = new Vector3(startpoint.x, platform.transform.position.y, startpoint.z);
-            CmdSetPlatformMoving(true,false,false);
+            CmdSetPlarformStatus(1);
         }
         Physics.Raycast(mule.transform.position, - Vector3.up, out hit, 100);
         Debug.DrawRay(mule.transform.position, - Vector3.up, Color.red, 100f);
@@ -259,7 +435,7 @@ public class Generator : NetworkBehaviour
     public void GoBack() {
         bool isQuestCompeted = GetQuestStatus();
         if (isQuestCompeted) {
-            CmdSetPlatformMoving(true, false, true);
+            CmdSetPlarformStatus(3);
         }
     }
     public bool GetQuestStatus()
@@ -272,9 +448,21 @@ public class Generator : NetworkBehaviour
     }
     public void Update()
     {
-        if (isPlatformStarted)
+        if (isStartGenerate) {
+            if (!isStart) {
+                isStart = true;
+            }
+            if (isGeneratingCompleted) {
+                if (isServer) {
+                    StartPlatform();
+                }
+                isStartGenerate = false;//ЕСЛИ ВСЁ СЛОМАЕТСЯ Я ПОДВИНУЛ ВОТ ТУТ
+            }
+        }
+        if (platformstatus!=0)
         {
-            if (!isPlatformBack)
+            UI.SetActive(false);
+            if (platformstatus == 1)
             {
                 if (Vector3.Distance(platform.transform.position, startpoint) > 5f)
                 {
@@ -282,20 +470,60 @@ public class Generator : NetworkBehaviour
                 }
                 else
                 {
-                    CmdSetPlatformMoving(false, true, false);
+                    CmdSetPlarformStatus(2);
                 }
             }
-            else
+            else if (platformstatus == 3)
             {
-                if (Vector3.Distance(platform.transform.position, startpoint) < 100f)
+                if (platform.transform.position.y < 100f)
                 {
                     platform.transform.Translate(0, 6f * Time.deltaTime, 0);
                 }
                 else
                 {
-                    CmdSetPlatformMoving(false, true, false);
+                    CmdSetPlarformStatus(0);
+                    if (isServer) { CmdSwitchDelete(); platform.transform.position = startplatfromposition; }
                 }
             }
+            else if (platformstatus == 2) {
+                ActualiseMission();
+            }
+            UpdateResources();
+        }
+        if (platformstatus == 0) {
+            if (seed != 0) {
+                if (seed!=localseed) {
+                    UI.SetActive(true);
+                    localseed = seed;
+                    Random.seed = seed;
+                    funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
+                    currentquest = (questtype)Random.Range(0, 1);
+                    if (currentquest == questtype.Добыча)
+                    {
+                        questtarget = Random.Range(0, resources.Count);
+                        questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
+                    }
+                    resourcePic.texture = resources[questtarget].icon;
+                    missionName.text = funnyname;
+                    missiontype.text = currentquest.ToString();
+                    missionpic.sprite = missioncontroller.missiontypes[(int)currentquest].icon;
+                    missiondifpic.sprite = missioncontroller.difficulties[questdifficulty].icon;
+                }
+            }
+        }
+        if (deleteitall != deleteitalllocal) {
+            CloseMission();
+            deleteitalllocal = deleteitall;
+            for (int i = 0; i < GameObject.FindGameObjectsWithTag("Cluster").Length; ++i) {
+                Destroy(GameObject.FindGameObjectsWithTag("Cluster")[i]);
+            }
+            isStart = false;
+            isStartGenerate = false;
+            isGeneratingCompleted = false;
+            manager.transform.gameObject.SetActive(false);
+            generatedchunks = 0;
+            generatedfriends = 0;
+            generatingphase = 0;
         }
         if (isaddingresource) {
             CmdAddResource(addingresourceid, addingresourcecount);
@@ -341,29 +569,53 @@ public class Generator : NetworkBehaviour
     private int guishift;
     private void OnGUI()
     {
-        if (!isGeneratingCompleted) {
-            GUI.Box(new Rect(Screen.width * 0.5f - 150, Screen.height * 0.5f - 10, 300, 25), "Сгенерировано "+generatedchunks*9 + "/" + sizeX * sizeY * sizeZ * 9+" чанков");
-        }
-        guishift = 0;
-        for (int i = 0; i < resourcesCount.Count; ++i) if (resourcesCount[i] != 0)
+        if (isStart)
+        {
+            if (!isGeneratingCompleted)
             {
-                GUI.Box(new Rect(Screen.width -30, 200+guishift*30, 30, 30), resources[i].icon);
-                GUI.Box(new Rect(Screen.width -60, 200+guishift*30, 30, 30), resourcesCount[i]+"");
-                ++guishift;
+                if (generatingphase == 0)
+                {
+                    loading.GetComponent<Slider>().value = (generatedchunks * 9f) / (sizeX * sizeY * sizeZ * 9f);
+                    GUI.Box(new Rect(Screen.width * 0.5f - 150, Screen.height * 0.5f - 10, 300, 25), "Сгенерировано " + generatedchunks * 9 + "/" + sizeX * sizeY * sizeZ * 9 + " чанков");
+                }
+                else if (generatingphase == 1)
+                {
+                    GUI.Box(new Rect(Screen.width * 0.5f - 150, Screen.height * 0.5f - 10, 300, 25), "Расчитано " + generatedfriends + "/" + walkpoints.Count + " точек навигации");
+                }
             }
-        //задание
-        GUI.Box(new Rect(Screen.width - 400, 0, 400, 100), "");
-        GUI.Box(new Rect(Screen.width - 300, 0, 300, 25), "Задание: " +currentquest);
-        GUI.Box(new Rect(Screen.width - 300, 25, 300, 25), "" + funnyname);
-        if (currentquest == questtype.Добыча) { 
-            GUI.Box(new Rect(Screen.width - 300, 50, 300, 25), "Добудьте " + resources[questtarget].materialName);
-            GUI.Box(new Rect(Screen.width - 300, 75, 300, 25), resourcesCount[questtarget] + "/" + questparam);
-            GUI.Box(new Rect(Screen.width - 400, 0, 100, 100), resources[questtarget].icon);
+            /*guishift = 0;
+            for (int i = 0; i < resourcesCount.Count; ++i) if (resourcesCount[i] != 0)
+                {
+                    GUI.Box(new Rect(Screen.width - 30, 200 + guishift * 30, 30, 30), resources[i].icon);
+                    GUI.Box(new Rect(Screen.width - 60, 200 + guishift * 30, 30, 30), resourcesCount[i] + "");
+                    ++guishift;
+                }
+            //задание
+            GUI.Box(new Rect(Screen.width - 400, 0, 400, 100), "");
+            GUI.Box(new Rect(Screen.width - 300, 0, 300, 25), "Задание: " + currentquest);
+            GUI.Box(new Rect(Screen.width - 300, 25, 300, 25), "" + funnyname);
+            if (currentquest == questtype.Добыча)
+            {
+                GUI.Box(new Rect(Screen.width - 300, 50, 300, 25), "Добудьте " + resources[questtarget].materialName);
+                GUI.Box(new Rect(Screen.width - 300, 75, 300, 25), resourcesCount[questtarget] + "/" + questparam);
+                GUI.Box(new Rect(Screen.width - 400, 0, 100, 100), resources[questtarget].icon);
+            }*/
+        }
+        GUI.Box(new Rect(0, 0, 100, 25), seed + "");
+        int c = 0;
+        if(revivePoints.Count>0)foreach (var dead in revivePoints) {
+            GUI.Box(new Rect(0, 100 + c * 25, 200, 25), dead.Key + "(" + dead.Value+"%)");
+            ++c;
         }
     }
     public enum questtype { 
         Добыча
     }
-    private readonly string[] funnyA = { "Зов", "Ужас", "Крик", "Поиск", "Защита" };
-    private readonly string[] funnyB = { "Ужаса", "Вечности", "Пустоты", "Отчаяния", "Риска", "Власти" };
+    public static readonly string[] funnyA = { "Зов", "Ужас", "Крик", "Поиск", "Защита","Предвосхищение","Ожидание","Стремление" };
+    public static readonly string[] funnyB = { "Ужаса", "Вечности", "Пустоты", "Отчаяния", "Риска", "Власти","Наживы","Удачи","Восторга","Жизни" };
+
+    public static bool FastDist(Vector3 a, Vector3 b, float squaredistance)
+    {
+        return (a - b).sqrMagnitude < squaredistance;
+    }
 }

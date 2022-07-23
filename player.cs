@@ -2,12 +2,14 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.UI;
 
 public class player : NetworkBehaviour
 {
     public GameObject head;
+    public AudioSource Audio;
     public float speed = 75f;
-    public GameObject sphereDestroyer,flare;
+    public GameObject sphereDestroyer,flare,death;
     public TextMesh hpobject;
     private Rigidbody rb;
     private Vector3 mousedelta;
@@ -15,13 +17,41 @@ public class player : NetworkBehaviour
     public List<Resource> resources;
     public Animator animator;
     private Generator generator;
+    private MissionMenuController missionMenuController;
     private bool isTeleported = false;
     private float attackcooldown = 0;
     private float flarecooldown = 0;
     private int localhp = 101;
     private float magnitude;
-    private bool seeContainer,seeInteraction, gobackinteraction;
+    private bool seeContainer, seeInteraction, gobackinteraction, missionselectorinteraction;
     private float containercooldown = 0;
+    private GameObject targetobject;
+    private bool truestart = false;
+
+    //смерть
+    private GameObject mydeath;
+    private bool deathInteraction;
+    private bool isDead;
+
+    //щиты
+    private int shield=100;
+    private float shieldcooldown;
+
+    //инвентарь и всё прочее
+    [SyncVar]
+    public int characterclass=-1;
+    public characterclass[] classes;
+    public GameObject UIobject,UIInventory;
+    public Text UIhp,UIshld;
+    public Slider hpbar, shldbar, flarebar;
+    public Image classpic;
+    public GameObject expscreen;
+
+    //другие игроки
+    public GameObject UIPlayerPrefab,UIPlayersbase;
+    private static List<player> players;
+    private int updatetimer;
+    private int localclass=-1;
     
     private GameObject[] allitems;
     [SyncVar]
@@ -45,6 +75,27 @@ public class player : NetworkBehaviour
         generator.MoveMuleMarker(pos);
     }
     [Command]
+    void CmdSpawnDeath() {
+        GameObject ob = Instantiate(death, transform.position, transform.rotation);
+        mydeath = ob;
+        ob.transform.name = nickname;
+        NetworkServer.Spawn(ob);
+        generator.AddDeathPlayer(nickname);
+    }
+    [Command]
+    void CmdAddRevivePoints(string name,float amout) {
+        generator.AddRevivePoints(name, amout);
+    }
+    [Command]
+    void CmdTryRevive()
+    {
+        if (generator.GetAlive(nickname)) {
+            NetworkServer.Destroy(mydeath);
+            hp = 100;
+            generator.AddRevivePoints(nickname, -100);
+        }
+    }
+    [Command]
     void CmdSpawnFlare() {
         GameObject ob= Instantiate(flare, head.transform.position, head.transform.rotation);
         ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20,ForceMode.Impulse);
@@ -60,7 +111,8 @@ public class player : NetworkBehaviour
     }
     [Command]
     void CmdStartMission() {
-        generator.StartPlatform();
+        generator.StartMission();
+        //generator.StartPlatform();
     }
     [Command]
     void CmdEndMission() {
@@ -71,12 +123,36 @@ public class player : NetworkBehaviour
         nickname = nick;
     }
     [Command]
+    void CmdSetClass(int characterclass) {
+        this.characterclass = characterclass;
+    }
+    [Command]
     void CmdDmg(int dmg) {
         hp = hp-dmg;
     }
     [Command]
     void CmdIsDrop(bool isdrop) {
         isDropToContainer = isdrop;
+    }
+    public void Dmg(int dmg) {
+        if (dmg-shield < 10)
+        {
+            shield -= dmg;
+            if (shield < 0) shield = 0;
+        }
+        else {
+            shield = 0;
+            CmdDmg(dmg-shield);
+        }
+        shieldcooldown = 4f;
+    }
+    private bool isClear = false;
+    private void Clear() {
+        for (int i = 0; i < resourcesCount.Count; ++i) {
+            if (resourcesCount[i] > 0) { CmdAddResource(i, -resourcesCount[i]); }
+        }
+        CmdDmg(-(100 - hp));
+        isClear = true;
     }
     public void Attack()
     {
@@ -86,138 +162,262 @@ public class player : NetworkBehaviour
                 CmdSpawnDestroyer(hit.point);
             }
     }
-    void Start()
-    {
-        generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
-        if (isServer) for (int i = 0; i < resources.Count; ++i) { resourcesCount.Add(0); }
-        if (isLocalPlayer)
+    private void AddPlayer(player player,int ix) {
+       GameObject ui = Instantiate(UIPlayerPrefab, UIPlayersbase.transform.position, UIPlayersbase.transform.rotation, UIPlayersbase.transform);
+        ui.name = player.netId.ToString();
+        ui.transform.Translate(ix * 90, 0, 0);
+        ui.transform.Find("Name").GetComponent<Text>().text = player.nickname;
+        ui.transform.Find("HPbar").GetComponent<Slider>().value = player.hp*0.01f;
+        if(player.characterclass!=-1)ui.GetComponent<Image>().sprite = classes[player.characterclass].icon;
+    }
+    private void UpdatePlayer(player player) {
+        GameObject ui = UIPlayersbase.transform.Find(player.netId.ToString()).gameObject;
+        if (ui)
         {
+            ui.transform.Find("HPbar").GetComponent<Slider>().value = player.hp * 0.01f;
+            ui.transform.Find("Name").GetComponent<Text>().text = player.nickname;
+            ui.GetComponent<Image>().sprite = classes[player.characterclass].icon;
+        }
+    }
+    private void UpdateResources() {
+        int xshift;
+        int activecount=0;
+        for (int i = 0; i < resourcesCount.Count; ++i) {
+            UIInventory.transform.GetChild(i).gameObject.SetActive(resourcesCount[i] > 0);
+            if (resourcesCount[i] > 0)
+            {
+                UIInventory.transform.GetChild(i).GetChild(1).GetComponent<Text>().text = resourcesCount[i].ToString();
+                ++activecount;
+            }
+        }
+        xshift = (activecount / 2)*-50;
+        int iter = 0;
+        for (int i = 0; i < resourcesCount.Count; ++i)
+        {
+            if (resourcesCount[i] > 0)
+            {
+                UIInventory.transform.GetChild(i).transform.localPosition = new Vector3(xshift + iter * 60, 0, 0);
+                ++iter;
+            }
+        }
+    }
+        private void Start()
+    {
+        UIPlayersbase = GameObject.Find("Canvas").transform.Find("UI").transform.Find("PlayersBase").gameObject;
+        if (isServer) for (int i = 0; i < resources.Count; ++i) { resourcesCount.Add(0); }
+        generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
+        missionMenuController = GameObject.Find("MissionMenuController").GetComponent<MissionMenuController>();
+        if (!isLocalPlayer) { head.transform.GetChild(0).gameObject.SetActive(false); }
+        rb = GetComponent<Rigidbody>();
+        if (players == null) players = new List<player>();
+        if (!isLocalPlayer)
+        {
+            AddPlayer(this, players.Count);
+            players.Add(this);
+        }
+    }
+    void TrueStart()
+    {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
             CmdSetNick(GameObject.Find("network").GetComponent<customNetworkHUD>().nickname);
+            CmdSetClass(GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass);
+            CmdDmg(1);
             hpobject.gameObject.SetActive(false);
-        }
-        else {
-            head.transform.GetChild(0).gameObject.SetActive(false);
-        }
-        rb = GetComponent<Rigidbody>();
+            UIobject = GameObject.Find("Canvas").transform.Find("UI").gameObject;
+            UIobject.SetActive(true);
+            UIhp = UIobject.transform.Find("HeartImage").transform.Find("HPText").GetComponent<Text>();
+            hpbar = UIobject.transform.Find("HeartImage").transform.Find("HealthBorder").GetComponent<Slider>();
+            UIshld = UIobject.transform.Find("ShieldImage").transform.Find("ShieldText").GetComponent<Text>();
+            shldbar = UIobject.transform.Find("ShieldImage").transform.Find("ShieldBorder").GetComponent<Slider>();
+            flarebar = UIobject.transform.Find("Flare").GetComponent<Slider>();
+            classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
+            classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
+            UIInventory = UIobject.transform.Find("Inventory").gameObject;
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (isLocalPlayer)
+
+        if (isLocalPlayer&&!truestart) { if (GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass != -1) { truestart = true; TrueStart(); } return; }
+        if (isLocalPlayer&&!missionMenuController.isMissionMenuOpened)
         {
-            if (attackcooldown > 0) { attackcooldown -= Time.deltaTime;
-                animator.SetBool("Attack", false);
-            }
-            if (flarecooldown > 0)
+            if (!isDead)
             {
-                flarecooldown -= Time.deltaTime;
-            }
-            if (containercooldown > 0)
-            {
-                containercooldown -= Time.deltaTime;
-            }
-            mousedelta.x = Input.GetAxis("Mouse X");
-            mousedelta.y = Input.GetAxis("Mouse Y");
-            transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
-            head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
-            if (Input.GetKey(KeyCode.W)) { transform.Translate(0, 0, Time.deltaTime * 0.1f * speed); }
-            if (Input.GetKey(KeyCode.A)) { transform.Translate(Time.deltaTime * -0.1f * speed, 0, 0); }
-            if (Input.GetKey(KeyCode.S)) { transform.Translate(0, 0, Time.deltaTime * -0.1f * speed); }
-            if (Input.GetKey(KeyCode.D)) { transform.Translate(Time.deltaTime * 0.1f * speed, 0, 0); }
-            if (Input.GetKey(KeyCode.E))
-            {
-                if (seeContainer && containercooldown <= 0)
+                if (attackcooldown > 0)
                 {
-                    for (int i = 0; i < resourcesCount.Count; ++i)
+                    attackcooldown -= Time.deltaTime;
+                    animator.SetBool("Attack", false);
+                }
+                if (flarecooldown > 0)
+                {
+                    flarecooldown -= Time.deltaTime;
+                    flarebar.value = 1f-flarecooldown*0.25f;
+                }
+                if (containercooldown > 0)
+                {
+                    containercooldown -= Time.deltaTime;
+                }
+                mousedelta.x = Input.GetAxis("Mouse X");
+                mousedelta.y = Input.GetAxis("Mouse Y");
+                transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
+                head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
+                if (Input.GetKey(KeyCode.W)) { transform.Translate(0, 0, Time.deltaTime * 0.1f * speed); }
+                if (Input.GetKey(KeyCode.A)) { transform.Translate(Time.deltaTime * -0.1f * speed, 0, 0); }
+                if (Input.GetKey(KeyCode.S)) { transform.Translate(0, 0, Time.deltaTime * -0.1f * speed); }
+                if (Input.GetKey(KeyCode.D)) { transform.Translate(Time.deltaTime * 0.1f * speed, 0, 0); }
+                if (Input.GetKey(KeyCode.E))
+                {
+                    if (seeContainer && containercooldown <= 0)
                     {
-                        if (resourcesCount[i] > 0)
+                        for (int i = 0; i < resourcesCount.Count; ++i)
                         {
-                            CmdAddResource(i, -1);
-                            CmdIsDrop(true);
-                            generator.AddResource(i, 1);
-                            containercooldown = 0.1f;
-                            break;
+                            if (resourcesCount[i] > 0)
+                            {
+                                CmdAddResource(i, -1);
+                                CmdIsDrop(true);
+                                generator.AddResource(i, 1);
+                                containercooldown = 0.1f;
+                                break;
+                            }
                         }
                     }
-                }
-                if (gobackinteraction)
-                {
-                    if (!generator.DropPhase)
+                    if (gobackinteraction)
                     {
-                        CmdStartMission();
+                        if (generator.platformstatus == 0)
+                        {
+                            CmdStartMission();
+                        }
+                        else if(generator.platformstatus == 2)
+                        {
+                            CmdEndMission();
+                        }
+                        gobackinteraction = false;
                     }
-                    else
+                    if (deathInteraction&&targetobject) {
+                        CmdAddRevivePoints(targetobject.name, Time.deltaTime*50);
+                    }
+                    if (missionselectorinteraction) {
+                        missionMenuController.GenerateMissions();
+                        //generator.ShowMissions();
+                    }
+                }
+                else
+                {
+                    CmdIsDrop(false);
+                }
+                if (Input.GetKeyDown(KeyCode.Space)) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
+                if (Input.GetKey(KeyCode.Mouse0))
+                {
+                    if (attackcooldown <= 0)
                     {
-                        CmdEndMission();
+                        animator.SetBool("Attack", true);
+                        attackcooldown = 1f;
+                        Attack();
                     }
-                    gobackinteraction = false;
+
                 }
-            }
-            else {
-                CmdIsDrop(false);
-            }
-            if (Input.GetKeyDown(KeyCode.Space)) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
-            if (Input.GetKey(KeyCode.Mouse0))
-            {
-                if (attackcooldown<=0)
+                if (Input.GetKeyDown(KeyCode.F))
                 {
-                    animator.SetBool("Attack", true);
-                    attackcooldown = 1f;
-                    Attack();
+                    if (flarecooldown <= 0)
+                    {
+                        flarecooldown = 4f;
+                        CmdSpawnFlare();
+                    }
                 }
-                
-            }
-            if (Input.GetKeyDown(KeyCode.F)) {
-                if (flarecooldown <= 0)
+                if (Input.GetKeyDown(KeyCode.C))
                 {
-                    flarecooldown = 4f;
-                    CmdSpawnFlare();
+                    Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
+                    if (hit.transform)
+                    {
+                        CmdMoveMarker(hit.point);
+                    }
                 }
-            }
-            if (Input.GetKeyDown(KeyCode.C))
-            {
+
+
+                //взаимодействие
+                seeInteraction = false;
+                missionselectorinteraction = false;
+                gobackinteraction = false;
+                deathInteraction = false;
+                seeContainer = false;
                 Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
                 if (hit.transform)
                 {
-                    CmdMoveMarker(hit.point);
+                    if (hit.collider.transform.CompareTag("Container"))
+                    {
+                        seeContainer = true;
+                        seeInteraction = true;
+                    }
+                    if (hit.collider.transform.name == "redbutton")
+                    {
+                        seeInteraction = true;
+                        gobackinteraction = true;
+                    }
+                    if (hit.collider.transform.name == "missionselector")
+                    {
+                        seeInteraction = true;
+                        missionselectorinteraction = true;
+                    }
+                    if (hit.collider.transform.CompareTag("Death"))
+                    {
+                        seeInteraction = true;
+                        deathInteraction = true;
+                        targetobject = hit.collider.transform.gameObject;
+                    }
                 }
-            }
-            if (Input.GetKeyDown(KeyCode.F12))
-            {
-                CmdStartMission();
-            }
-
-
-            //взаимодействие
-            seeInteraction = false;
-            gobackinteraction = false;
-            seeContainer = false;
-            Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
-            if (hit.transform)
-            {
-                if (hit.collider.transform.CompareTag("Container"))
+                Physics.Raycast(transform.position, -transform.up, out hit, 6);
+                if (hit.transform)
                 {
-                    seeContainer = true;
-                    seeInteraction = true;
+                    transform.parent = transform;
                 }
-                if (hit.collider.transform.name == "redbutton") {
-                    seeInteraction = true;
-                    gobackinteraction = true;
+
+                //  if (GameObject.Find("SphereDestroyer(Clone)")) { marchingspace.isChecking = true;  } else { marchingspace.isChecking = false; }
+                magnitude = rb.velocity.magnitude;
+                if (hp < 0)
+                {
+                    isDead = true;
+                    CmdSpawnDeath();
+                }
+
+                //щиты
+                shldbar.value = shield * 0.01f;
+                UIshld.text = shield.ToString();
+                if (shield < 100)
+                {
+                    if (shieldcooldown > 0) { shieldcooldown -= Time.deltaTime; } else { ++shield; shieldcooldown = 0.1f; }
+                }
+
+                //инвентарь
+                UpdateResources();
+
+                //ui игроки
+                if (updatetimer == 0) {
+                    for (int i = 0; i < players.Count; ++i) {
+                        UpdatePlayer(players[i]);
+                    }
+                    updatetimer = 300;
+                }
+                else { --updatetimer; }
+            }
+            else {
+                if (hp == 100)
+                {
+                    isDead = false;
+                }
+                else {
+                    CmdTryRevive();
                 }
             }
-
-            //  if (GameObject.Find("SphereDestroyer(Clone)")) { marchingspace.isChecking = true;  } else { marchingspace.isChecking = false; }
-            magnitude = rb.velocity.magnitude;
         }
         if (localhp != hp) {
             localhp = hp;
-            hpobject.text = nickname="\n" + hp;
+            if (!isLocalPlayer) { hpobject.text = nickname + "\n" + hp; } else { UIhp.text = hp.ToString(); hpbar.value = hp*0.01f; }
         }
-        if (generator.isPlatformStarted) { transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
-        if (generator.isPlatformStopped) { transform.parent = null; }
+        
+        if (generator.platformstatus==1||generator.platformstatus==3) { if (isLocalPlayer&&!isClear) { Clear(); } transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
+        if (generator.platformstatus==0||generator.platformstatus==2) { transform.parent = null;isTeleported = false;isClear = false; }
         allitems = GameObject.FindGameObjectsWithTag("Item");
         int id;
         for (int i = 0; i < allitems.Length; ++i) {
@@ -230,7 +430,12 @@ public class player : NetworkBehaviour
                 }
             }
         }
-        
+
+        //украшательства
+        if (characterclass!=-1&&localclass != characterclass) {
+            localclass = characterclass;
+            Audio.PlayOneShot(classes[characterclass].greetings);
+        }
     }
     private void OnCollisionEnter(Collision collision)
     {
@@ -249,28 +454,34 @@ public class player : NetworkBehaviour
         {
            // print(magnitude);
             if (magnitude > 10f) {
-                CmdDmg((int)(magnitude-10));
+                Dmg((int)((magnitude-10)*4));
             }
         }
     }
-    private int guishift;
-    private void OnGUI()
-    {
-        if (isLocalPlayer)
-        {
-            guishift = 0;
-            for (int i = 0; i < resourcesCount.Count; ++i)if(resourcesCount[i]!=0)
-            {
-                GUI.Box(new Rect(Screen.width * 0.5f - 200 + guishift * 60, Screen.height - 105, 60, 60), resources[i].icon);
-                GUI.Box(new Rect(Screen.width * 0.5f - 200 + guishift * 60, Screen.height - 55, 60, 20), resources[i].name);
-                GUI.Box(new Rect(Screen.width * 0.5f - 200 + guishift * 60, Screen.height - 25, 60, 25), resourcesCount[i] + "");
-                    ++guishift;
-            }
-            GUI.Box(new Rect(0, Screen.height - 25, 200, 25), "HP: " + hp);
-            GUI.Box(new Rect(0, Screen.height - 50, 200, 25), "SPD: " + magnitude);
-            GUI.Box(new Rect(Screen.width - 30, Screen.height - (50 - 50 * flarecooldown * 0.25f), 30, (50 - 50 * flarecooldown * 0.25f)), "f");
-            if (seeInteraction) { GUI.Box(new Rect(Screen.width * 0.5f - 20, Screen.height * 0.5f + 60, 40, 40), "[E]"); }
-            if (gobackinteraction) { GUI.Box(new Rect(Screen.width * 0.5f - 30, Screen.height * 0.5f + 100, 60, 40), "Пуск"); }
-        }
-    }
+    private readonly int[] levels = {
+    3000,
+    4000,
+    5000,
+    6000,
+    7000,
+    8000,
+    9000,
+    10000,
+    11000,
+    12000,
+    13000,
+    14000,
+    15000,
+    15500,
+    16000,
+    16500,
+    17000,
+    17500,
+    18000,
+    18500,
+    19000,
+    19500,
+    20000,
+    20500
+    };
 }

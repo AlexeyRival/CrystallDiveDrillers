@@ -16,12 +16,18 @@ public class marchingspace : MonoBehaviour
     public List<Resource> resources;
     public Generator generator;
     private FastNoiseLite noise;
+    public List<marchingspace> neighbors, friends;
+    public Dictionary<Vector3, Generator.walkpoint> walkpoints;
+
     void Start()
     {
+        friends = new List<marchingspace>();
+        neighbors = new List<marchingspace>();
+        walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
         space = new bool[sizeX, sizeY, sizeZ];
         shift = new float[sizeX, sizeY, sizeZ];
-        center = transform.position + new Vector3(sizeX * step * transform.localScale.x, sizeY * step * transform.localScale.y, sizeZ * step * transform.localScale.z)*0.5f;
+        center = transform.position + new Vector3(sizeX * step * transform.localScale.x, sizeY * step * transform.localScale.y, sizeZ * step * transform.localScale.z) * 0.5f;
         Generate();
         BakeMesh();
     }
@@ -36,20 +42,20 @@ public class marchingspace : MonoBehaviour
         secondnoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         //print(noise.GetNoise((Random.Range(0,sizeX) + transform.position.x) * 3, (Random.Range(0, sizeY) + transform.position.y) * 3, (Random.Range(0, sizeZ) + transform.position.z) * 3));
         int vertscount = sizeX * sizeY * sizeZ;
-        float f,sf;
+        float f, sf;
         GameObject ob;
 
 
         int[] mineralscount = new int[resources.Count];
-        for(int i=0;i<mineralscount.Length;++i)mineralscount[i]= Random.Range(15, 30);
+        for (int i = 0; i < mineralscount.Length; ++i) mineralscount[i] = Random.Range(15, 30);
         int x, y, z;
         bool maxpoint = false;
 
         List<Vector3> cavepoints = new List<Vector3>();
-        for (int i = 0; i < generator.cavepoints.Count; ++i)if(Vector3.Distance(transform.position,generator.cavepoints[i])<36)
-        {
-            cavepoints.Add(generator.cavepoints[i]);
-        }
+        for (int i = 0; i < generator.cavepoints.Count; ++i) if (Vector3.Distance(transform.position, generator.cavepoints[i]) < 36)
+            {
+                cavepoints.Add(generator.cavepoints[i]);
+            }
         List<Vector3> tunnelpoints = new List<Vector3>();
         for (int i = 0; i < generator.tunnelpoints.Count; ++i) if (Vector3.Distance(transform.position, generator.tunnelpoints[i]) < 36)
             {
@@ -65,57 +71,57 @@ public class marchingspace : MonoBehaviour
 
                     //первая пещера
                     if (
-                       //f < 0 &&
                             Vector3.Distance(gencenter, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 4 < 20
-                            && Mathf.Abs(gencenter.y - (y + transform.position.y)) + f*2 < 10)
+                            && Mathf.Abs(gencenter.y - (y + transform.position.y)) + f * 2 < 10)
                     {
                         space[x, y, z] = true;
                     }
-                     //   (Mathf.Pow(x + transform.position.x - Generator.center.x, 2)+ Mathf.Pow((y + transform.position.y -Generator.center.y)*2f, 2)+ Mathf.Pow(z + transform.position.z -Generator.center.z, 2)+f<30*30);
-                    shift[x, y, z] =f;
+
+                    shift[x, y, z] = f;
                     //0;
 
                     //другие пещеры
 
                     for (int i = 0; i < cavepoints.Count; ++i) if (
-                            Vector3.Distance(cavepoints[i],new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z))+f*3<10
-                            &&Mathf.Abs(cavepoints[i].y-(y+transform.position.y))+f*2<5
-                            //(Mathf.Pow(x + transform.position.x - cavepoints[i].x, 2) + Mathf.Pow((y + transform.position.y - cavepoints[i].y) * 2f, 2) + Mathf.Pow(z + transform.position.z - cavepoints[i].z, 2) + f < 10 * 10)
+                            //Vector3.Distance(cavepoints[i],new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z))+f*3<10
+                            Generator.FastDist(cavepoints[i], new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), 100 - (f * 3 * f * 3))
+                            && Mathf.Abs(cavepoints[i].y - (y + transform.position.y)) + f * 2 < 5
+
                             )
                         {
-                        space[x, y, z] =true;
-                    }
+                            space[x, y, z] = true;
+                        }
                     for (int i = 0; i < tunnelpoints.Count; ++i) if (
                             Vector3.Distance(tunnelpoints[i], new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 2 < 4
-                            //(Mathf.Pow(x + transform.position.x - tunnelpoints[i].x, 2) + Mathf.Pow((y + transform.position.y - tunnelpoints[i].y) * 2f, 2) + Mathf.Pow(z + transform.position.z - tunnelpoints[i].z, 2) + f < 5 * 5)
+
                             )
                         {
-                        space[x, y, z] =true;
-                    }
+                            space[x, y, z] = true;
+                        }
 
                     //руды
                     if (
-                        (x!=0 &&y != 0&&z != 0 && x != sizeX - 1 && y != sizeY - 1 && z != sizeZ - 1) &&
+                        (x != 0 && y != 0 && z != 0 && x != sizeX - 1 && y != sizeY - 1 && z != sizeZ - 1) &&
                         !space[x, y, z] && (space[x + 1, y, z] | space[x - 1, y, z] | space[x, y + 1, z] | space[x, y - 1, z] | space[x, y, z + 1] | space[x, y, z - 1]))
                     {
                         //герит
                         if (//f < 0.0001f && f > -0.0001f &&
                             sf > 0.4f && sf < 0.6f &&
-                            f > 0.3f &&f < 0.6f &&
+                            f > 0.3f && f < 0.6f &&
                             mineralscount[0] > 0)
                         {
-                            ob = Instantiate(resources[0].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+                            ob = Instantiate(resources[0].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)), transform);
                             ob.name = resources[0].id.ToString();
                             --mineralscount[0];
                         }
 
                         //греадит
                         if (//f < 0.0001f && f > -0.0001f &&
-                            sf > 0.2f && sf < 0.5f && 
-                            f>0.7f&&
+                            sf > -0.5f && sf < -0.35f &&
+                            f > 0.4f && f < 0.5f &&
                             mineralscount[1] > 0)
                         {
-                            ob = Instantiate(resources[1].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+                            ob = Instantiate(resources[1].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)), transform);
                             ob.name = resources[1].id.ToString();
                             --mineralscount[1];
                         }
@@ -126,16 +132,26 @@ public class marchingspace : MonoBehaviour
                             f > 0f && f < 0.3f &&
                             mineralscount[2] > 0)
                         {
-                            ob = Instantiate(resources[2].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
+                            ob = Instantiate(resources[2].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)), transform);
                             ob.name = resources[2].id.ToString();
                             --mineralscount[2];
+                        }
+                        //Фальдареит
+                        if (
+                            sf > 0.2f && sf < 0.5f &&
+                            f > 0.7f &&
+                            mineralscount[2] > 0)
+                        {
+                            ob = Instantiate(resources[3].orePrefab, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z), Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)), transform);
+                            ob.name = resources[3].id.ToString();
+                            --mineralscount[3];
                         }
                     }
                     //центр всего
                     if (
                             Vector3.Distance(gencenter, new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)) + f * 2 < 15
                             && Mathf.Abs(gencenter.y - (y + transform.position.y)) + f < 8
-                            &&f<0.5f&&f>-0.5f
+                            && f < 0.5f && f > -0.5f
                         //f < -0.99f &&
                         //(Mathf.Pow(x + transform.position.x - Generator.center.x, 2) + Mathf.Pow(y + transform.position.y - Generator.center.y, 2) + Mathf.Pow(z + transform.position.z - Generator.center.z, 2) < 30 * 30)
                         && !maxpoint)
@@ -147,7 +163,8 @@ public class marchingspace : MonoBehaviour
                     //сетка навигации
 
                 }
-        int borders,matches;
+        /*int borders,matches;
+        
         for (x = 0; x < sizeX; ++x)
             for (y = 0; y < sizeY; ++y)
                 for (z = 0; z < sizeZ; ++z)
@@ -157,29 +174,31 @@ public class marchingspace : MonoBehaviour
                         + ((y == 0 || !space[x, y-1, z]) ? 1 : 0) + ((y == sizeY - 1 || !space[x, y+1, z]) ? 1 : 0)
                         + ((z == 0 || !space[x, y, z-1]) ? 1 : 0) + ((z == sizeZ - 1 || !space[x, y, z+1]) ? 1 : 0);
                     if (
-          //  (x != 0 && y != 0 && z != 0 && x != sizeX - 1 && y != sizeY - 1 && z != sizeZ - 1) &&
-          //  space[x, y, z] && !(space[x + 1, y, z] & space[x - 1, y, z] & space[x, y + 1, z] & space[x, y - 1, z] & space[x, y, z + 1] & space[x, y, z - 1]))
                     space[x,y,z]&&(matches>0&&matches>borders))
                     {
                         generator.walkpoints.Add(new Generator.walkpoint(new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)));
                     }
-                }
+                }*/
         //for (int i = 0; i < Random.Range(15, 30); ++i) {
         //Instantiate(ore, new Vector3(Random.Range(0, sizeX)*step, Random.Range(0, sizeY) * step, Random.Range(0, sizeZ) * step)+transform.position, Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
         //}
 
     }
-    private void BakeMesh()
+    public void BakeMesh()
     {
         mesh = new Mesh();
         List<Vector3> fuckthislist = new List<Vector3>();
         List<int> triangles = new List<int>();
         List<Vector2> uvs = new List<Vector2>();
+        walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         meshData bufdata;
         int max = 0;
-        int x, y, z,i;
+        int x, y, z, i;
+        int borders, matches;
         for (x = 0; x < sizeX - 1; ++x)
+        {
             for (y = 0; y < sizeY - 1; ++y)
+            {
                 for (z = 0; z < sizeZ - 1; ++z)
                 {
                     bufdata = getData(getMC(getMCId(new bool[] { space[x, y, z], space[x + 1, y, z], space[x + 1, y, z + 1], space[x, y, z + 1], space[x, y + 1, z], space[x + 1, y + 1, z], space[x + 1, y + 1, z + 1], space[x, y + 1, z + 1] })));
@@ -194,14 +213,89 @@ public class marchingspace : MonoBehaviour
                     fuckthislist.AddRange(bufdata.verts);
                     if (triangles.Count > 0) for (i = 0; i < bufdata.tris.Length; ++i)
                         {
-                            bufdata.tris[i] += max+1;
+                            bufdata.tris[i] += max + 1;
                         }
-                        for (i = 0; i < bufdata.tris.Length; ++i) {
-                            if (bufdata.tris[i] > max) max = bufdata.tris[i];
-                        }   
-                    
+                    for (i = 0; i < bufdata.tris.Length; ++i)
+                    {
+                        if (bufdata.tris[i] > max) max = bufdata.tris[i];
+                    }
+
                     triangles.AddRange(bufdata.tris);
+                    if (space[x, y, z]) {
+                        if (x == 0 || x == sizeX - 1)
+                        {
+                            for (i = 0; i < neighbors.Count; ++i) {
+                                if (!friends.Contains(neighbors[i])) {
+                                    if (neighbors[i].space[sizeX - 1 - x, y, z]) {
+                                        friends.Add(neighbors[i]);
+                                        neighbors[i].friends.Add(this);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (y == 0 || y == sizeY - 1)
+                        {
+                            for (i = 0; i < neighbors.Count; ++i) {
+                                if (!friends.Contains(neighbors[i]))
+                                {
+                                    if (neighbors[i].space[x, sizeY - 1 - y, z])
+                                    {
+                                        friends.Add(neighbors[i]);
+                                        neighbors[i].friends.Add(this);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (z == 0 || z == sizeZ - 1)
+                        {
+                            for (i = 0; i < neighbors.Count; ++i) {
+                                if (!friends.Contains(neighbors[i]))
+                                {
+                                    if (neighbors[i].space[x, y, sizeZ - 1 - z])
+                                    {
+                                        friends.Add(neighbors[i]);
+                                        neighbors[i].friends.Add(this);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (generator.isServer) {
+                            borders = ((x == 0) ? 1 : 0) + ((x == sizeX - 1) ? 1 : 0) + ((y == 0) ? 1 : 0) + ((y == sizeY - 1) ? 1 : 0) + ((z == 0) ? 1 : 0) + ((z == sizeZ - 1) ? 1 : 0);
+                            matches = ((x == 0 || !space[x - 1, y, z]) ? 1 : 0) + ((x == sizeX - 1 || !space[x + 1, y, z]) ? 1 : 0)
+                                + ((y == 0 || !space[x, y - 1, z]) ? 1 : 0) + ((y == sizeY - 1 || !space[x, y + 1, z]) ? 1 : 0)
+                                + ((z == 0 || !space[x, y, z - 1]) ? 1 : 0) + ((z == sizeZ - 1 || !space[x, y, z + 1]) ? 1 : 0);
+                            Vector3 calculatedvector = new Vector3(step * x + transform.position.x, step * y + transform.position.y, step * z + transform.position.z);
+
+                            if (matches > 0 && borders != matches)
+                            {
+                                if (!walkpoints.ContainsKey(calculatedvector))
+                                {
+                                    walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector));
+                                }
+                            }/*
+                        else
+                        {
+                            if (walkpoints.ContainsKey(calculatedvector)) {
+                                walkpoints.Remove(calculatedvector);
+                            }
+                        }*/
+                        } }
                 }
+            }
+        }
+        if(generator.isServer)foreach (var point in walkpoints)
+        {
+            for (i = 0; i < neighborsTable.Length; ++i)
+            {
+                if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step))
+                {
+                    point.Value.friends.Add(point.Value.position + neighborsTable[i] * step);
+                }
+            }
+        }
         mesh.vertices = fuckthislist.ToArray();
         mesh.triangles = triangles.ToArray();
         mesh.uv = uvs.ToArray();
@@ -210,6 +304,85 @@ public class marchingspace : MonoBehaviour
         mesh.RecalculateBounds();
         meshFilter.mesh = mesh;
         meshCollider.sharedMesh = mesh;
+    }
+    public Vector3 CalculateWeights(Vector3 finalpoint) {
+        Vector3 resualt=SetWeights(finalpoint);
+        SetCorners();
+        return resualt;
+    }
+    private Vector3 SetWeights(Vector3 finalpoint) {
+        int alivepoints, prealivepoints = -1;
+        List<Vector3> buffer;
+        float minweight;
+        int minid;
+        int k = 0;
+        
+        while (k < 100)
+        {
+            ++k;
+            alivepoints = 0;
+            buffer = new List<Vector3>();
+            foreach (var point in walkpoints)
+            {
+                if (point.Value.weight == 0) {
+                    for (int i = 0; i < point.Value.friends.Count; ++i) {
+                        if (walkpoints[point.Value.friends[i]].weight != 0) {
+                            buffer.Add(point.Key);
+                            break;
+                        }
+                    }
+                    ++alivepoints;
+                }
+            }
+            for (int i = 0; i < buffer.Count; ++i)
+            {
+                minweight = 999f;
+                minid = -1;
+                for (int ii = 0; ii < walkpoints[buffer[i]].friends.Count; ++ii) {
+                    if (walkpoints[walkpoints[buffer[i]].friends[ii]].weight != 0 && walkpoints[walkpoints[buffer[i]].friends[ii]].weight < minweight) {
+                        minid = ii;
+                        minweight = walkpoints[walkpoints[buffer[i]].friends[ii]].weight;
+                    }
+                }
+                if (minid != -1) {
+                    walkpoints[buffer[i]].weight = walkpoints[walkpoints[buffer[i]].friends[minid]].weight + 1;
+                }
+                if (Generator.FastDist(buffer[i], finalpoint, 4))
+                {
+                    return buffer[i];
+                }
+            }
+            if (alivepoints == prealivepoints) { break; }
+            prealivepoints = alivepoints;
+        }
+        return new Vector3(-1, -1, -1);
+    }
+    private void SetCorners() {
+        int count = 0;
+        for (int i = 0; i < friends.Count; ++i)
+        {
+            foreach (var point in walkpoints) if (point.Value.weight!=0)
+            {
+                for (int ii = 0; ii < neighborsTable.Length; ++ii)
+                {
+                    if (friends[i].walkpoints.ContainsKey(point.Key + neighborsTable[ii]))
+                    {
+                        ++count;
+                        if (friends[i].walkpoints[point.Key + neighborsTable[ii]].weight == 0)
+                        {
+                            friends[i].walkpoints[point.Key + neighborsTable[ii]].weight = point.Value.weight + 1;
+                        }
+                        Debug.DrawRay(point.Key, neighborsTable[ii] * step, new Color(0.77f, 0.34f, 0.44f, 0.34f), 10f);
+                    }
+                }
+            }
+        }
+        //print($"присвоено {count} граничных точек");
+    }
+    public void ClearWeights() {
+        foreach (var point in walkpoints) {
+            point.Value.weight = 0;
+        }
     }
     private int getMCId(bool[] arr) {
         return (arr[0] ? 0 : 1) + (arr[1] ? 0 : 2) + (arr[2] ? 0 : 4) + (arr[3] ? 0 : 8) + (arr[4] ? 0 : 16) + (arr[5] ? 0 : 32) + (arr[6] ? 0 : 64) + (arr[7] ? 0 : 128);
@@ -245,19 +418,38 @@ public class marchingspace : MonoBehaviour
             if (isGizmosDraws)
             {
                 Gizmos.color = Color.cyan;
-                for (int x = 0; x < sizeX; ++x)
+                /*for (int x = 0; x < sizeX; ++x)
                     for (int y = 0; y < sizeY; ++y)
                         for (int z = 0; z < sizeZ; ++z)
                         {
                             if (!space[x, y, z]) Gizmos.DrawCube(transform.position + new Vector3(x * step, y * step, z * step), new Vector3(0.1f, 0.1f, 0.1f));
-                        }
+                        }*/
             }
             if (maxx != 0) {
                 Gizmos.color = new Color(0.43f, 0.93f, 0.2f, 0.4f);
                 Gizmos.DrawWireCube(new Vector3((minx + maxx) * 0.5f, (miny + maxy) * 0.5f, (minz + maxz) * 0.5f)+transform.position, new Vector3(minx - maxx, miny - maxy, minz - maxz));
             }
-            Gizmos.color = !isChecking?Color.white:Color.magenta;
-            Gizmos.DrawWireCube(center, new Vector3(sizeX, sizeY, sizeZ));
+            for (int i = 0; i < friends.Count; ++i)
+            {
+                Debug.DrawLine(center, friends[i].center, Color.blue, 1f);
+            }
+            foreach (var point in walkpoints)
+            {
+                Gizmos.color = new Color(0.83f, 0.93f, 0.2f, 0.4f);
+                if (point.Value.weight!=0)
+                {
+                    for (int ii = 0; ii < point.Value.friends.Count; ++ii) {
+                      //  Debug.DrawLine(point.Value.position, walkpoints[point.Value.friends[ii]].position,new Color(0.83f, 0.93f, 0.2f, 0.2f));
+                    }//new Color(0.83f-Mathf.Sin(3*point.Value.weight*0.05f), Mathf.Sin(3 * point.Value.weight * 0.05f), Mathf.Sin(1.5f * point.Value.weight * 0.05f), 0.4f);
+                    Gizmos.color = new Color(0.83f-(point.Value.weight*0.1f), (point.Value.weight * 0.1f), 0.2f, 0.4f);
+                }
+                Gizmos.DrawWireCube(point.Value.position, new Vector3(0.5f, 0.5f, 0.5f));
+            }
+            if (mesh.vertexCount != 0)
+            {
+                Gizmos.color = !isChecking ? Color.white : Color.magenta;
+                Gizmos.DrawWireCube(center, new Vector3(sizeX, sizeY, sizeZ));
+            }
         }
     }
     private int minx;
@@ -302,7 +494,10 @@ public class marchingspace : MonoBehaviour
                         for (int y = miny; y < maxy; ++y)
                             for (int z = minz; z < maxz; ++z) if (!space[x, y, z])
                                 {
-                                    if (Vector3.Distance(vec, new Vector3(x, y+shift[x,y,z], z) + transform.position) < scale) { space[x, y, z] = true; isChanged = true; }
+                            //        if (Vector3.Distance(vec, new Vector3(x, y+shift[x,y,z], z) + transform.position) < scale) {
+                                    if (Generator.FastDist(vec, new Vector3(x, y+shift[x,y,z], z) + transform.position, scale*scale)) {
+                                space[x, y, z] = true; isChanged = true; 
+                            }
                                 }
                 }
                 catch
@@ -328,6 +523,30 @@ public class marchingspace : MonoBehaviour
             this.tris = tris;
         }
     }
+
+    public static readonly Vector3[] neighborsTable = {
+        new Vector3(1,0,0),
+        new Vector3(-1,0,0),
+        new Vector3(0,1,0),
+        new Vector3(0,-1,0),
+        new Vector3(0,0,1),
+        new Vector3(0,0,-1),
+
+        new Vector3(1,0,1),
+        new Vector3(-1,0,1),
+        new Vector3(0,1,1),
+        new Vector3(0,-1,1),
+
+        new Vector3(1,0,-1),
+        new Vector3(-1,0,-1),
+        new Vector3(0,1,-1),
+        new Vector3(0,-1,-1),
+
+        new Vector3(1,-1,0),
+        new Vector3(-1,1,0),
+        new Vector3(1,1,0),
+        new Vector3(-1,-1,0)
+    };
     private readonly Vector3[] trianglesTable = {
         new Vector3(0.5f,0,0),
         new Vector3(1f,0,0.5f),

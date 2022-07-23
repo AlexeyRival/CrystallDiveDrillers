@@ -6,6 +6,7 @@ public class ChunkManager : MonoBehaviour
 {
     public GameObject[] chunks;
     public marchingspace[] marchingspaces;
+    public GameObject spheredestroyer;
     private GameObject[] destroyers;
     private Vector3[] centers;
     private int[] sizes;
@@ -18,7 +19,19 @@ public class ChunkManager : MonoBehaviour
             centers[i] = chunks[i].GetComponent<marchingspace>().center;
             sizes[i] = chunks[i].GetComponent<marchingspace>().sizeX/4*3;
         }
-        marchingspaces = ms.ToArray();
+        for (int i = 0; i < ms.Count; ++i)
+        {
+            for (int ii = i; ii < ms.Count; ++ii)if(i!=ii)
+            {
+                    if (Generator.FastDist(ms[i].transform.position, ms[ii].transform.position, ms[i].sizeX * ms[i].sizeX + 1)) {
+                        ms[i].neighbors.Add(ms[ii]);
+                        ms[ii].neighbors.Add(ms[i]);
+                    }
+            }
+        }
+        for (int i = 0; i < ms.Count; ++i)
+        { ms[i].BakeMesh(); }
+            marchingspaces = ms.ToArray();
     }
 
     // Update is called once per frame

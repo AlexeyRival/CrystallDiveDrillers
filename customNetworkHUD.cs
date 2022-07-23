@@ -12,6 +12,7 @@ public class customNetworkHUD : NetworkManager
     public int progress;
     public bool isElite;
     public Transform platformposition;
+    public GameObject classselector, blackscreen;
     #region singleton
     public static customNetworkHUD Instanse { get; private set; }
     #endregion
@@ -23,7 +24,23 @@ public class customNetworkHUD : NetworkManager
     private void Start()
     {
         startPositions.Add(platformposition);
-        nickname = "Player" + Random.Range(0, 29032002);
+        try
+        {
+            StreamReader file = new StreamReader(Application.dataPath + "/save.cdddat");
+            nickname = file.ReadLine();
+            file.Close();
+        }
+        catch
+        {
+            nickname = "Player" + Random.Range(0, 29032002);
+        }
+        characterclass = -1;
+    }
+    private void SaveNick()
+    {
+        StreamWriter file = new StreamWriter(Application.dataPath + "/save.cdddat");
+        file.WriteLine(nickname);
+        file.Close();
     }
     public void SpawnAny(int index) {
         NetworkServer.Spawn(Instantiate(spawnPrefabs[index]));
@@ -39,6 +56,12 @@ public class customNetworkHUD : NetworkManager
     }
     private string address;
     public string nickname="Playyyer";
+    public int characterclass;
+    public void SetClass(int id) {
+        characterclass = id;
+        blackscreen.SetActive(false);
+        classselector.SetActive(false);
+    }
     private void OnGUI()
     {
         if (!connected)
@@ -54,14 +77,22 @@ public class customNetworkHUD : NetworkManager
                 singleton.networkPort = 7777;
                 singleton.StartHost();
                 connected = true;
+                SaveNick();
+                classselector.SetActive(true);
+                blackscreen.SetActive(true);
             }
+            if (GUI.Button(new Rect(Screen.width * 0.5f + 150, Screen.height * 0.5f, 50, 25), "LH")) { address = "127.0.0.1"; }
+            if (GUI.Button(new Rect(Screen.width * 0.5f + 200, Screen.height * 0.5f, 50, 25), "RVL")) { address = "26.219.110.5"; }
             if (GUI.Button(new Rect(Screen.width * 0.5f, Screen.height * 0.5f + 40, 125, 20), "Подключиться"))
             {
                 transform.GetChild(0).gameObject.SetActive(false);
                 singleton.networkAddress = address;
                 singleton.networkPort = 7777;
                 singleton.StartClient();
+                SaveNick();
                 connected = true;
+                classselector.SetActive(true);
+                blackscreen.SetActive(true);
             }
             if (GUI.Button(new Rect(0, Screen.height - 20, 120, 20), "Выйти"))
             {
