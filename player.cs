@@ -9,6 +9,7 @@ public class player : NetworkBehaviour
     public GameObject head;
     public AudioSource Audio;
     public float speed = 75f;
+    private float sprint=1f;
     public GameObject sphereDestroyer,flare,death;
     public TextMesh hpobject;
     private Rigidbody rb;
@@ -29,9 +30,9 @@ public class player : NetworkBehaviour
     private bool truestart = false;
 
     //смерть
-    private GameObject mydeath;
     private bool deathInteraction;
-    private bool isDead;
+    public static bool isDead;
+    private bool isReviving;
 
     //щиты
     private int shield=100;
@@ -41,17 +42,23 @@ public class player : NetworkBehaviour
     [SyncVar]
     public int characterclass=-1;
     public characterclass[] classes;
-    public GameObject UIobject,UIInventory;
+    public GameObject UIobject,UIInventory,UIRevive;
     public Text UIhp,UIshld;
     public Slider hpbar, shldbar, flarebar;
     public Image classpic;
     public GameObject expscreen;
 
+    //уровни и опыт
+    public static int level;
+    public static int xp;
+    public static int dwarfclass=-1;
+
     //другие игроки
     public GameObject UIPlayerPrefab,UIPlayersbase;
-    private static List<player> players;
+    public static List<player> players;
     private int updatetimer;
     private int localclass=-1;
+
     
     private GameObject[] allitems;
     [SyncVar]
@@ -75,13 +82,10 @@ public class player : NetworkBehaviour
         generator.MoveMuleMarker(pos);
     }
     [Command]
-    void CmdSpawnDeath() {
-        GameObject ob = Instantiate(death, transform.position, transform.rotation);
-        mydeath = ob;
-        ob.transform.name = nickname;
-        NetworkServer.Spawn(ob);
+    void CmdDie() {
         generator.AddDeathPlayer(nickname);
     }
+
     [Command]
     void CmdAddRevivePoints(string name,float amout) {
         generator.AddRevivePoints(name, amout);
@@ -90,7 +94,6 @@ public class player : NetworkBehaviour
     void CmdTryRevive()
     {
         if (generator.GetAlive(nickname)) {
-            NetworkServer.Destroy(mydeath);
             hp = 100;
             generator.AddRevivePoints(nickname, -100);
         }
@@ -201,7 +204,15 @@ public class player : NetworkBehaviour
             }
         }
     }
-        private void Start()
+
+    //загрузка
+    [SyncVar]
+    public float loadingstatus;
+    [Command]
+    public void CmdSetProgress(float f) {
+        loadingstatus = f;
+    }
+    private void Start()
     {
         UIPlayersbase = GameObject.Find("Canvas").transform.Find("UI").transform.Find("PlayersBase").gameObject;
         if (isServer) for (int i = 0; i < resources.Count; ++i) { resourcesCount.Add(0); }
@@ -234,6 +245,7 @@ public class player : NetworkBehaviour
             classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
             classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
             UIInventory = UIobject.transform.Find("Inventory").gameObject;
+            UIRevive = UIobject.transform.Find("Revive").gameObject;
     }
 
     // Update is called once per frame
@@ -259,14 +271,15 @@ public class player : NetworkBehaviour
                 {
                     containercooldown -= Time.deltaTime;
                 }
+                isReviving = false;
                 mousedelta.x = Input.GetAxis("Mouse X");
                 mousedelta.y = Input.GetAxis("Mouse Y");
                 transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
                 head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
-                if (Input.GetKey(KeyCode.W)) { transform.Translate(0, 0, Time.deltaTime * 0.1f * speed); }
-                if (Input.GetKey(KeyCode.A)) { transform.Translate(Time.deltaTime * -0.1f * speed, 0, 0); }
-                if (Input.GetKey(KeyCode.S)) { transform.Translate(0, 0, Time.deltaTime * -0.1f * speed); }
-                if (Input.GetKey(KeyCode.D)) { transform.Translate(Time.deltaTime * 0.1f * speed, 0, 0); }
+                if (Input.GetKey(KeyCode.W)) { transform.Translate(0, 0, Time.deltaTime * 0.1f * speed*sprint); }
+                if (Input.GetKey(KeyCode.A)) { transform.Translate(Time.deltaTime * -0.1f * speed * sprint, 0, 0); }
+                if (Input.GetKey(KeyCode.S)) { transform.Translate(0, 0, Time.deltaTime * -0.1f * speed * sprint); }
+                if (Input.GetKey(KeyCode.D)) { transform.Translate(Time.deltaTime * 0.1f * speed * sprint, 0, 0); }
                 if (Input.GetKey(KeyCode.E))
                 {
                     if (seeContainer && containercooldown <= 0)
@@ -296,7 +309,8 @@ public class player : NetworkBehaviour
                         gobackinteraction = false;
                     }
                     if (deathInteraction&&targetobject) {
-                        CmdAddRevivePoints(targetobject.name, Time.deltaTime*50);
+                        CmdAddRevivePoints(targetobject.GetComponent<player>().nickname, Time.deltaTime*50);
+                        isReviving = true;
                     }
                     if (missionselectorinteraction) {
                         missionMenuController.GenerateMissions();
@@ -308,6 +322,8 @@ public class player : NetworkBehaviour
                     CmdIsDrop(false);
                 }
                 if (Input.GetKeyDown(KeyCode.Space)) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
+                sprint = 1f;
+                if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.25f;}
                 if (Input.GetKey(KeyCode.Mouse0))
                 {
                     if (attackcooldown <= 0)
@@ -360,7 +376,7 @@ public class player : NetworkBehaviour
                         seeInteraction = true;
                         missionselectorinteraction = true;
                     }
-                    if (hit.collider.transform.CompareTag("Death"))
+                    if (hit.collider.transform.CompareTag("Player")&&hit.collider.transform.GetComponent<player>().hp<=0)
                     {
                         seeInteraction = true;
                         deathInteraction = true;
@@ -378,7 +394,7 @@ public class player : NetworkBehaviour
                 if (hp < 0)
                 {
                     isDead = true;
-                    CmdSpawnDeath();
+                    CmdDie();
                 }
 
                 //щиты
@@ -392,6 +408,16 @@ public class player : NetworkBehaviour
                 //инвентарь
                 UpdateResources();
 
+                //возрождение другого
+                if (isReviving)
+                {
+                    UIRevive.SetActive(true);
+                    UIRevive.GetComponent<Slider>().value = generator.GetRevivePoints(targetobject.GetComponent<player>().nickname)*0.01f;
+                }
+                else {
+                    UIRevive.SetActive(false);
+                }
+
                 //ui игроки
                 if (updatetimer == 0) {
                     for (int i = 0; i < players.Count; ++i) {
@@ -400,6 +426,7 @@ public class player : NetworkBehaviour
                     updatetimer = 300;
                 }
                 else { --updatetimer; }
+
             }
             else {
                 if (hp == 100)
@@ -417,7 +444,7 @@ public class player : NetworkBehaviour
         }
         
         if (generator.platformstatus==1||generator.platformstatus==3) { if (isLocalPlayer&&!isClear) { Clear(); } transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
-        if (generator.platformstatus==0||generator.platformstatus==2) { transform.parent = null;isTeleported = false;isClear = false; }
+        if (generator.platformstatus==0||generator.platformstatus==2) { transform.parent = null;isTeleported = false;isClear = false;if (generator.isStart&&isLocalPlayer) { CmdSetProgress(generator.GetLoadingStatus()); } }
         allitems = GameObject.FindGameObjectsWithTag("Item");
         int id;
         for (int i = 0; i < allitems.Length; ++i) {
@@ -431,10 +458,14 @@ public class player : NetworkBehaviour
             }
         }
 
-        //украшательства
+        //классы
         if (characterclass!=-1&&localclass != characterclass) {
             localclass = characterclass;
             Audio.PlayOneShot(classes[characterclass].greetings);
+            if (isLocalPlayer) {
+                dwarfclass = characterclass;
+            }
+            speed = classes[characterclass].speed;
         }
     }
     private void OnCollisionEnter(Collision collision)
@@ -458,7 +489,7 @@ public class player : NetworkBehaviour
             }
         }
     }
-    private readonly int[] levels = {
+    public static readonly int[] levels = {
     3000,
     4000,
     5000,

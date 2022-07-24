@@ -15,7 +15,7 @@ public class marchingspace : MonoBehaviour
     public Vector3 center;
     public List<Resource> resources;
     public Generator generator;
-    private FastNoiseLite noise;
+    private FastNoiseLite noise, secondnoise,thirdnoise;
     public List<marchingspace> neighbors, friends;
     public Dictionary<Vector3, Generator.walkpoint> walkpoints;
 
@@ -34,12 +34,15 @@ public class marchingspace : MonoBehaviour
     private void Generate()
     {
         noise = new FastNoiseLite();
-        FastNoiseLite secondnoise = new FastNoiseLite();
+        secondnoise = new FastNoiseLite();
+        thirdnoise = new FastNoiseLite();
         noise.SetSeed(generator.seed);// 1212391999);//Random.Range(0,9763245));
         secondnoise.SetSeed(-generator.seed);// 1212391999);//Random.Range(0,9763245));
+        thirdnoise.SetSeed((int)(((long)generator.seed)*125/144));
         //noise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         noise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         secondnoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        thirdnoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         //print(noise.GetNoise((Random.Range(0,sizeX) + transform.position.x) * 3, (Random.Range(0, sizeY) + transform.position.y) * 3, (Random.Range(0, sizeZ) + transform.position.z) * 3));
         int vertscount = sizeX * sizeY * sizeZ;
         float f, sf;
@@ -192,6 +195,8 @@ public class marchingspace : MonoBehaviour
         List<Vector2> uvs = new List<Vector2>();
         walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         meshData bufdata;
+        float f,sf,tf;
+        int fcon = 256;//4 32 128
         int max = 0;
         int x, y, z, i;
         int borders, matches;
@@ -206,8 +211,11 @@ public class marchingspace : MonoBehaviour
                     {
                         bufdata.verts[i] *= step;
                         bufdata.verts[i] = new Vector3(bufdata.verts[i].x + x * step, bufdata.verts[i].y + y * step, bufdata.verts[i].z + z * step);
-                        bufdata.verts[i] += new Vector3(0, noise.GetNoise((bufdata.verts[i].x + transform.position.x) * 4, (bufdata.verts[i].y + transform.position.y) * 4, (bufdata.verts[i].z + transform.position.z) * 4), 0);
-                        uvs.Add(new Vector2(Mathf.Sin(bufdata.verts[i].x / sizeX), Mathf.Cos(bufdata.verts[i].z / sizeZ) * 0.5f + Mathf.Cos(bufdata.verts[i].y / sizeY) * 0.5f));
+                        f = noise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon)*0.25f;
+                        sf = secondnoise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon) * 0.25f;
+                        tf = thirdnoise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon) * 0.25f;
+                        bufdata.verts[i] += new Vector3(sf, f, tf);
+                        //uvs.Add(new Vector2(Mathf.Sin(bufdata.verts[i].x / sizeX), Mathf.Cos(bufdata.verts[i].z / sizeZ) * 0.5f + Mathf.Cos(bufdata.verts[i].y / sizeY) * 0.5f));
                         //uvs.Add(new Vector2(bufdata.verts[i].x/sizeX*0.5f+bufdata.verts[i].y/sizeY*0.5f,bufdata.verts[i].z / sizeZ*0.5f + bufdata.verts[i].y / sizeY * 0.5f));
                     }
                     fuckthislist.AddRange(bufdata.verts);
@@ -413,7 +421,7 @@ public class marchingspace : MonoBehaviour
     }
     private void OnDrawGizmos()
     {
-        if (Application.isPlaying)
+        if (false)//Application.isPlaying)
         {
             if (isGizmosDraws)
             {

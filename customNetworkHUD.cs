@@ -12,6 +12,11 @@ public class customNetworkHUD : NetworkManager
     public int progress;
     public bool isElite;
     public Transform platformposition;
+    public int[] dwarflevels=new int[8];
+    public int[] dwarfxp=new int[8];
+    public int[] dwarfeliteranks=new int[8];
+    public int[] dwarfprestige=new int[8];
+    public int accountlvl, accountxp;
     public GameObject classselector, blackscreen;
     #region singleton
     public static customNetworkHUD Instanse { get; private set; }
@@ -28,18 +33,40 @@ public class customNetworkHUD : NetworkManager
         {
             StreamReader file = new StreamReader(Application.dataPath + "/save.cdddat");
             nickname = file.ReadLine();
+            accountxp = int.Parse(file.ReadLine());
+            accountlvl = int.Parse(file.ReadLine());
+            for (int i = 0; i < dwarflevels.Length; ++i)
+            {
+                dwarfxp[i] = int.Parse(file.ReadLine());
+                dwarflevels[i] = int.Parse(file.ReadLine());
+                dwarfeliteranks[i] = int.Parse(file.ReadLine());
+                dwarfprestige[i] = int.Parse(file.ReadLine());
+            }
             file.Close();
         }
         catch
         {
             nickname = "Player" + Random.Range(0, 29032002);
+            dwarflevels = new int[8];
+            dwarfxp = new int[8];
+            dwarfeliteranks = new int[8];
+            dwarfprestige = new int[8];
         }
         characterclass = -1;
     }
-    private void SaveNick()
+    public void Save()
     {
         StreamWriter file = new StreamWriter(Application.dataPath + "/save.cdddat");
         file.WriteLine(nickname);
+        file.WriteLine(accountxp);
+        file.WriteLine(accountlvl);
+        for (int i = 0; i < dwarflevels.Length; ++i)
+        {
+            file.WriteLine(dwarfxp[i]);
+            file.WriteLine(dwarflevels[i]);
+            file.WriteLine(dwarfeliteranks[i]);
+            file.WriteLine(dwarfprestige[i]);
+        }
         file.Close();
     }
     public void SpawnAny(int index) {
@@ -61,6 +88,15 @@ public class customNetworkHUD : NetworkManager
         characterclass = id;
         blackscreen.SetActive(false);
         classselector.SetActive(false);
+        player.xp = dwarfxp[id];
+        player.level = dwarflevels[id];
+    }
+    public void OpenClassSelector() {
+        classselector.SetActive(true);
+        blackscreen.SetActive(true);
+        for (int i = 0; i < dwarflevels.Length; ++i) {
+            classselector.transform.GetChild(i).GetChild(1).GetComponent<Text>().text = dwarflevels[i] + " Lvl " + dwarfeliteranks[i] + " Elr " + dwarfprestige[i] + " Prl";
+        }
     }
     private void OnGUI()
     {
@@ -77,9 +113,8 @@ public class customNetworkHUD : NetworkManager
                 singleton.networkPort = 7777;
                 singleton.StartHost();
                 connected = true;
-                SaveNick();
-                classselector.SetActive(true);
-                blackscreen.SetActive(true);
+                Save();
+                OpenClassSelector();
             }
             if (GUI.Button(new Rect(Screen.width * 0.5f + 150, Screen.height * 0.5f, 50, 25), "LH")) { address = "127.0.0.1"; }
             if (GUI.Button(new Rect(Screen.width * 0.5f + 200, Screen.height * 0.5f, 50, 25), "RVL")) { address = "26.219.110.5"; }
@@ -89,10 +124,9 @@ public class customNetworkHUD : NetworkManager
                 singleton.networkAddress = address;
                 singleton.networkPort = 7777;
                 singleton.StartClient();
-                SaveNick();
+                Save();
                 connected = true;
-                classselector.SetActive(true);
-                blackscreen.SetActive(true);
+                OpenClassSelector();
             }
             if (GUI.Button(new Rect(0, Screen.height - 20, 120, 20), "Выйти"))
             {

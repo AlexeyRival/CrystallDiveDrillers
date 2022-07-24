@@ -6,6 +6,7 @@ using UnityEngine.Networking;
 
 public class Generator : NetworkBehaviour
 {
+    public customNetworkHUD network;
     public int sizeX = 2;    
     public int sizeY = 2;
     public int sizeZ = 2;
@@ -29,6 +30,8 @@ public class Generator : NetworkBehaviour
     private int addingresourcecount, addingresourceid;
     private bool isaddingresource;
 
+    public characterclass[] classes;
+
     //UI
     public GameObject UI,UIInventory, Currentmission;
     public RawImage resourcePic;
@@ -38,6 +41,17 @@ public class Generator : NetworkBehaviour
     public Text missiontype;
     public GameObject loading;
     private int localseed;
+
+    //загрузка
+    private float[] playersprogress;
+
+    //кароче это типа ВАЩЕ ТАКАЯ ТЕМА ОФИГЕННАЯ КАРОЧЕ В ЧЁМ СУТЬ 
+    //
+    //начисление кароче ОПЫТА
+    public GameObject endmission;
+    public GameObject UIaccountlevel;
+    public Sprite[] levelprogress;
+    private int targetxp;
 
     //поиск пути
     public List<walkpoint> walkpoints;
@@ -53,6 +67,8 @@ public class Generator : NetworkBehaviour
     private bool deleteitall;
     private bool deleteitalllocal;
     private Vector3 startplatfromposition;
+    [SyncVar]
+    private bool isFailure=false;
 
     //дела отладочные
     private bool isShowDebugPathFinding;
@@ -72,11 +88,10 @@ public class Generator : NetworkBehaviour
     public void CmdSetPlarformStatus(int status) {
         platformstatus = status;
     }//0 - платформа на базе, 1 - платформа едет вниз, 2 - платформа стоит ждёт, 3 - платформа едет наверх
-    /*public void CmdSetPlatformMoving(bool isStarted,bool isStopped,bool isBack) {
-        isPlatformStarted = isStarted;
-        isPlatformStopped = isStopped;
-        isPlatformBack = isBack;
-    }*/
+    [Command]
+    public void CmdSetFailure(bool value) {
+        isFailure = value;
+    }
     public void CmdMoveMuleMarker(Vector3 newpos) {
         mulemarker.transform.position = newpos;
         pathendpoint = mule.transform.position;//newpos;//
@@ -95,10 +110,14 @@ public class Generator : NetworkBehaviour
     [Command]
     public void CmdSwitchDelete() {
         deleteitall = !deleteitall;
-        for (int i = 0; i < resources.Count; ++i) {
+        walkpoints = new List<walkpoint>();
+    }
+    [Command]
+    public void CmdClearResources() {
+        for (int i = 0; i < resources.Count; ++i)
+        {
             resourcesCount[i] = 0;
         }
-        walkpoints = new List<walkpoint>();
     }
     public void AddResource(int id, int amout) {
         if(platformstatus==2)CmdAddResource(id, amout);
@@ -107,18 +126,29 @@ public class Generator : NetworkBehaviour
     public void MoveMuleMarker(Vector3 newpos) {
         CmdMoveMuleMarker(newpos); 
     }
-
     private Dictionary<string, float> revivePoints;
+    [SyncVar]
+    private float lastreviver;
     //возрождение и всё что с ним связано
     public void AddRevivePoints(string name,float amout) {
         if (!revivePoints.ContainsKey(name)) { print(name); }
         revivePoints[name] += amout;
+        lastreviver = revivePoints[name];
+    }
+    public float GetRevivePoints(string name) {
+        return lastreviver;
     }
     public bool GetAlive(string name) {
         return revivePoints[name] >= 100;
     }
     public void AddDeathPlayer(string name) {
-        revivePoints.Add(name,0);
+        if (!revivePoints.ContainsKey(name))
+        {
+            revivePoints.Add(name, 0);
+        }
+        else {
+            revivePoints[name] = 0;
+        }
     }
     [Command]
     public void CmdSetDifficulty(int value) {
@@ -129,6 +159,8 @@ public class Generator : NetworkBehaviour
     }
     private void UpdateResources()
     {
+        if (platformstatus == 0) { UIInventory.SetActive(false);return; }
+        UIInventory.SetActive(true);
         int xshift;
         int activecount = 0;
         for (int i = 0; i < resourcesCount.Count; ++i)
@@ -150,16 +182,62 @@ public class Generator : NetworkBehaviour
             }
         }
     }
-    private void ActualiseMission() {
+    private void UpdateAccountLevel() {
+        UIaccountlevel.SetActive(true);
+        UIaccountlevel.transform.Find("levelpic").GetComponent<Image>().sprite = levelprogress[network.accountxp];
+        UIaccountlevel.transform.Find("level").GetComponent<Text>().text = network.accountlvl.ToString();
+    }
+    private void ActualiseMission()
+    {
+        UIaccountlevel.SetActive(false);
         Currentmission.SetActive(true);
         Currentmission.transform.Find("Name").GetComponent<Text>().text = funnyname;
         Currentmission.transform.Find("Type Pic").GetComponent<Image>().sprite = missioncontroller.missiontypes[(int)currentquest].icon;
         Currentmission.transform.Find("Difficulty Pic").GetComponent<Image>().sprite = missioncontroller.difficulties[questdifficulty].icon;
         if (currentquest == questtype.Добыча) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = resources[questtarget].materialName + " - " + resourcesCount[questtarget] + "/" + questparam; }
     }
-    private void CloseMission() {
-        //TODO начисление опыта
+    private void CloseMission(bool fail) {
+        targetxp = 0;
+        int xp_resource = 0;
+        int xp_kills = 0;
+        int xp_firstquest = 0;
+        int xp_secondquest = 0;
+        for (int i = 0; i < resourcesCount.Count; ++i) {
+            xp_resource += resourcesCount[i];
+        }
+        if (currentquest == questtype.Добыча) {
+            xp_resource += resourcesCount[questtarget]*2;
+            if (resourcesCount[questtarget] >= questparam) {
+                xp_firstquest = 2500;
+            }
+        }
+        xp_resource = (int)(xp_resource*missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
+        xp_kills= (int)(xp_kills * missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
+        xp_firstquest = (int)(xp_firstquest*missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
+        xp_secondquest = (int)(xp_secondquest*missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
+        
+        if (fail)
+        {
+            xp_resource = 0;
+            xp_kills /= 10;
+            xp_firstquest /= 10;
+            xp_secondquest = 0;
+        }
+
+        targetxp = xp_resource + xp_kills + xp_firstquest + xp_secondquest;
+
+
+        endmission.transform.Find("resources").GetComponent<Text>().text=xp_resource+"XP";
+        endmission.transform.Find("kills").GetComponent<Text>().text=xp_kills + "XP";
+        endmission.transform.Find("firstquest").GetComponent<Text>().text=xp_firstquest + "XP";
+        endmission.transform.Find("secondquest").GetComponent<Text>().text=xp_secondquest + "XP";
+        endmission.transform.Find("all").GetComponent<Text>().text=targetxp+"XP";
+        endmission.transform.Find("Level").GetComponent<Text>().text = "" + player.level;
+
+        blackscreen.SetActive(true);
+        endmission.SetActive(true);
         Currentmission.SetActive(false);
+        UpdateAccountLevel();
     }
     public List<Vector3> CalculatePath() {
         List<Vector3> outpath = new List<Vector3>();
@@ -248,23 +326,6 @@ public class Generator : NetworkBehaviour
             }
         }
 
-        //print(ms.friends.Count + ":" + point.friends.Count);
-        /*for (int ii = 0; ii < point.friends.Count; ++ii)if(!ms.walkpoints.ContainsKey(point.friends[ii]))
-        {
-            for (int i = 0; i < ms.friends.Count; ++i) {
-                if (ms.friends[i].walkpoints.ContainsKey(point.friends[ii])) {
-         //           print(ms.friends[i].walkpoints[point.friends[ii]].weight);
-                    if (ms.friends[i].walkpoints[point.friends[ii]].weight < point.weight) {
-                        //Debug.DrawRay(point.friends[ii], Vector3.up * 3, Color.cyan, 10f);
-                        outlist = CalculatePoint(ms.friends[i], ms.friends[i].walkpoints[point.friends[ii]], target);
-                        if (outlist.Count != 0)
-                        {
-                            outlist.Add(point.position);
-                            return outlist;
-                        }
-                    }
-                }
-            }*/
             for (int i = 0; i < ms.friends.Count; ++i) {
             for (int ii = 0; ii < marchingspace.neighborsTable.Length; ++ii)
             {
@@ -422,6 +483,7 @@ public class Generator : NetworkBehaviour
             platform.transform.position = new Vector3(startpoint.x, platform.transform.position.y, startpoint.z);
             CmdSetPlarformStatus(1);
         }
+        CmdClearResources();
         Physics.Raycast(mule.transform.position, - Vector3.up, out hit, 100);
         Debug.DrawRay(mule.transform.position, - Vector3.up, Color.red, 100f);
         if (hit.transform)
@@ -434,9 +496,15 @@ public class Generator : NetworkBehaviour
     }
     public void GoBack() {
         bool isQuestCompeted = GetQuestStatus();
-        if (isQuestCompeted) {
+        if (isQuestCompeted)
+        {
+            CmdSetFailure(false);
             CmdSetPlarformStatus(3);
         }
+    }
+    public void GoBackFailure() {
+        CmdSetFailure(true);
+        CmdSetPlarformStatus(3);
     }
     public bool GetQuestStatus()
     {
@@ -446,13 +514,41 @@ public class Generator : NetworkBehaviour
         }
         return false;
     }
+    public float GetLoadingStatus() {
+        return (generatedchunks * 9f) / (sizeX * sizeY * sizeZ * 9f);
+    }
+    public void OrganizePlayersOnLoading() {
+        playersprogress = new float[player.players.Count];
+        GameObject ob;
+        float shift= (playersprogress.Length * 150 / 2);
+        for (int i = 0; i < playersprogress.Length; ++i) {
+            ob = loading.transform.GetChild(1).GetChild(i).gameObject;
+            ob.SetActive(true);
+            ob.transform.Translate(shift, 0, 0);
+            ob.transform.GetChild(1).GetComponent<Text>().text = player.players[i].nickname;
+            try
+            {
+                ob.GetComponent<Image>().sprite = classes[player.players[i].characterclass].icon;
+            }
+            catch {
+                print(player.players[i].characterclass);
+            }
+        }
+    }
     public void Update()
     {
         if (isStartGenerate) {
             if (!isStart) {
                 isStart = true;
+                OrganizePlayersOnLoading();
             }
-            if (isGeneratingCompleted) {
+            int playersready = 0;
+            for (int i = 0; i < playersprogress.Length; ++i) {
+                playersprogress[i] = player.players[i].loadingstatus;
+                if (playersprogress[i] == 1f) { ++playersready; }
+            }
+
+            if (isGeneratingCompleted&&playersready==playersprogress.Length) {
                 if (isServer) {
                     StartPlatform();
                 }
@@ -482,13 +578,26 @@ public class Generator : NetworkBehaviour
                 else
                 {
                     CmdSetPlarformStatus(0);
+                    UIaccountlevel.SetActive(true);
                     if (isServer) { CmdSwitchDelete(); platform.transform.position = startplatfromposition; }
                 }
             }
             else if (platformstatus == 2) {
                 ActualiseMission();
+                int diecount = 0;
+                for (int i = 0; i < player.players.Count;++i) {
+                    if (player.players[i].hp <= 0) { ++diecount; }
+                }
+                if (player.isDead && player.players.Count == diecount)
+                {
+                    GoBackFailure();
+                }
             }
             UpdateResources();
+            if (isFailure)
+            {
+                blackscreen.SetActive(true);
+            }
         }
         if (platformstatus == 0) {
             if (seed != 0) {
@@ -512,7 +621,7 @@ public class Generator : NetworkBehaviour
             }
         }
         if (deleteitall != deleteitalllocal) {
-            CloseMission();
+            CloseMission(isFailure); 
             deleteitalllocal = deleteitall;
             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Cluster").Length; ++i) {
                 Destroy(GameObject.FindGameObjectsWithTag("Cluster")[i]);
@@ -524,10 +633,65 @@ public class Generator : NetworkBehaviour
             generatedchunks = 0;
             generatedfriends = 0;
             generatingphase = 0;
+            //if (isServer) { CmdClearResources(); }
         }
         if (isaddingresource) {
             CmdAddResource(addingresourceid, addingresourcecount);
             isaddingresource = false;
+        }
+        if (player.dwarfclass != -1)
+        {
+            UpdateAccountLevel();
+        }
+        if (targetxp > 0) {
+            if (isFailure) {
+                targetxp = 15;
+            }
+            if (targetxp > 40000)
+            {
+                player.xp+=1000;
+                targetxp-=1000;
+            }else
+            if (targetxp > 4000)
+            {
+                player.xp+=100;
+                targetxp-=100;
+            }else
+            if (targetxp > 200)
+            {
+                player.xp+=10;
+                targetxp-=10;
+            }
+            else
+            {
+                ++player.xp;
+                --targetxp;
+            }
+            endmission.transform.Find("xp").GetComponent<Text>().text = player.xp+"/" + player.levels[player.level].ToString();
+            endmission.GetComponent<Slider>().value =((player.xp * 1f)/player.levels[player.level]);
+            if (player.xp >= player.levels[player.level]&&player.level!=24)
+            {
+                player.xp -= player.levels[player.level];
+                ++player.level;
+                endmission.transform.Find("Level").GetComponent<Text>().text = ""+player.level;
+                ++network.accountxp;
+                if (network.accountxp == 6)
+                {
+                    ++network.accountlvl;
+                    network.accountxp = 0;
+                }
+                UpdateAccountLevel();
+            }
+        }
+        if (Input.GetKeyDown(KeyCode.Space)&&targetxp==0) {
+            if (endmission.active) {
+                endmission.SetActive(false);
+                blackscreen.SetActive(false);
+                network.dwarfxp[player.dwarfclass] = player.xp;
+                network.dwarflevels[player.dwarfclass] = player.level;
+                network.Save();
+                CmdSetFailure(false);
+            }
         }
         if (Input.GetKeyDown(KeyCode.F3)) { isShowDebugPathFinding = !isShowDebugPathFinding; }
     }
@@ -566,46 +730,19 @@ public class Generator : NetworkBehaviour
             Gizmos.DrawCube(pathendpoint, new Vector3(0.5f, 0.5f, 0.5f));
         }
     }
-    private int guishift;
     private void OnGUI()
     {
         if (isStart)
         {
             if (!isGeneratingCompleted)
             {
-                if (generatingphase == 0)
-                {
-                    loading.GetComponent<Slider>().value = (generatedchunks * 9f) / (sizeX * sizeY * sizeZ * 9f);
-                    GUI.Box(new Rect(Screen.width * 0.5f - 150, Screen.height * 0.5f - 10, 300, 25), "Сгенерировано " + generatedchunks * 9 + "/" + sizeX * sizeY * sizeZ * 9 + " чанков");
-                }
-                else if (generatingphase == 1)
-                {
-                    GUI.Box(new Rect(Screen.width * 0.5f - 150, Screen.height * 0.5f - 10, 300, 25), "Расчитано " + generatedfriends + "/" + walkpoints.Count + " точек навигации");
-                }
+                    loading.GetComponent<Slider>().value = GetLoadingStatus();
             }
-            /*guishift = 0;
-            for (int i = 0; i < resourcesCount.Count; ++i) if (resourcesCount[i] != 0)
-                {
-                    GUI.Box(new Rect(Screen.width - 30, 200 + guishift * 30, 30, 30), resources[i].icon);
-                    GUI.Box(new Rect(Screen.width - 60, 200 + guishift * 30, 30, 30), resourcesCount[i] + "");
-                    ++guishift;
-                }
-            //задание
-            GUI.Box(new Rect(Screen.width - 400, 0, 400, 100), "");
-            GUI.Box(new Rect(Screen.width - 300, 0, 300, 25), "Задание: " + currentquest);
-            GUI.Box(new Rect(Screen.width - 300, 25, 300, 25), "" + funnyname);
-            if (currentquest == questtype.Добыча)
+            for (int i = 0; i < playersprogress.Length; ++i)
             {
-                GUI.Box(new Rect(Screen.width - 300, 50, 300, 25), "Добудьте " + resources[questtarget].materialName);
-                GUI.Box(new Rect(Screen.width - 300, 75, 300, 25), resourcesCount[questtarget] + "/" + questparam);
-                GUI.Box(new Rect(Screen.width - 400, 0, 100, 100), resources[questtarget].icon);
-            }*/
-        }
-        GUI.Box(new Rect(0, 0, 100, 25), seed + "");
-        int c = 0;
-        if(revivePoints.Count>0)foreach (var dead in revivePoints) {
-            GUI.Box(new Rect(0, 100 + c * 25, 200, 25), dead.Key + "(" + dead.Value+"%)");
-            ++c;
+                loading.transform.GetChild(1).GetChild(i).GetComponent<Slider>().value = playersprogress[i];
+            }
+
         }
     }
     public enum questtype { 
