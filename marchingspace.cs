@@ -14,6 +14,7 @@ public class marchingspace : MonoBehaviour
     private Mesh mesh;
     public Vector3 center;
     public List<Resource> resources;
+    public GameObject[] flowers;
     public Generator generator;
     private FastNoiseLite noise, secondnoise,thirdnoise;
     public List<marchingspace> neighbors, friends;
@@ -163,8 +164,10 @@ public class marchingspace : MonoBehaviour
                         maxpoint = true;
                     }
 
-                    //сетка навигации
-
+                    //цветы
+                    if (y > 0&& space[x, y, z] && !space[x, y - 1, z]&&sf>0.8f) {
+                        Instantiate(flowers[Random.Range(0,flowers.Length)], new Vector3(x + transform.position.x+Random.Range(-0.5f, 0.5f), y + transform.position.y-0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                    }
                 }
         /*int borders,matches;
         

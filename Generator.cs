@@ -639,7 +639,7 @@ public class Generator : NetworkBehaviour
             CmdAddResource(addingresourceid, addingresourcecount);
             isaddingresource = false;
         }
-        if (player.dwarfclass != -1)
+        if (player.dwarfclass != -1&&platformstatus==0)
         {
             UpdateAccountLevel();
         }

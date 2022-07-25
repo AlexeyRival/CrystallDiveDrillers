@@ -12,9 +12,14 @@ public class Destroyer : MonoBehaviour
     }
     private void OnCollisionEnter(Collision collision)
     {
-        if (collision.gameObject.CompareTag("Resource")) {
+        if (collision.gameObject.CompareTag("Resource"))
+        {
             int id = int.Parse(collision.gameObject.name);
             resources[id].SpawnItem(transform.position);
+            Destroy(collision.gameObject);
+        }
+        if (collision.gameObject.CompareTag("Decoration"))
+        { 
             Destroy(collision.gameObject);
         }
     }

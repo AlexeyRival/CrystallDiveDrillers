@@ -12,6 +12,7 @@ public class customNetworkHUD : NetworkManager
     public int progress;
     public bool isElite;
     public Transform platformposition;
+    public Transform[] spawnpoints;
     public int[] dwarflevels=new int[8];
     public int[] dwarfxp=new int[8];
     public int[] dwarfeliteranks=new int[8];
@@ -79,6 +80,7 @@ public class customNetworkHUD : NetworkManager
     {
         GameObject player = Instantiate(playerPrefab);
         player.transform.position = platformposition.position;
+        player.transform.position = spawnpoints[conn.connectionId].position;
         NetworkServer.AddPlayerForConnection(conn, player, playerControllerId);
     }
     private string address;
