@@ -92,6 +92,8 @@ public class customNetworkHUD : NetworkManager
         classselector.SetActive(false);
         player.xp = dwarfxp[id];
         player.level = dwarflevels[id];
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
     }
     public void OpenClassSelector() {
         classselector.SetActive(true);

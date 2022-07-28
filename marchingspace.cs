@@ -15,6 +15,7 @@ public class marchingspace : MonoBehaviour
     public Vector3 center;
     public List<Resource> resources;
     public GameObject[] flowers;
+    public GameObject[] stalagmites;
     public Generator generator;
     private FastNoiseLite noise, secondnoise,thirdnoise;
     public List<marchingspace> neighbors, friends;
@@ -68,7 +69,8 @@ public class marchingspace : MonoBehaviour
         Vector3 gencenter = Generator.center;
         for (x = 0; x < sizeX; ++x)
             for (y = 0; y < sizeY; ++y)
-                for (z = 0; z < sizeZ; ++z) {
+                for (z = 0; z < sizeZ; ++z)
+                {
                     //шумы
                     f = noise.GetNoise((x + transform.position.x) * 4, (y + transform.position.y) * 4, (z + transform.position.z) * 4);//3
                     sf = secondnoise.GetNoise((x + transform.position.x) * 4, (y + transform.position.y) * 4, (z + transform.position.z) * 4);//3
@@ -164,9 +166,24 @@ public class marchingspace : MonoBehaviour
                         maxpoint = true;
                     }
 
-                    //цветы
-                    if (y > 0&& space[x, y, z] && !space[x, y - 1, z]&&sf>0.8f) {
-                        Instantiate(flowers[Random.Range(0,flowers.Length)], new Vector3(x + transform.position.x+Random.Range(-0.5f, 0.5f), y + transform.position.y-0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                    //пол
+                    if (y > 0 && space[x, y, z] && !space[x, y - 1, z])
+                    {
+                        if (sf > 0.8f)
+                        {
+                            Instantiate(flowers[Random.Range(0, flowers.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                        } else if (((sf<0.8f&&sf>0.5f)|| (sf > -0.8f && sf < -0.5f))&& Random.Range(0, 7) == 0) { 
+                            Instantiate(stalagmites[Random.Range(0, stalagmites.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y-1f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(180, Random.Range(0, 360), 0), transform);
+                        }
+                    }
+                    //потолок
+                    if (y > 0 && !space[x, y, z] && space[x, y - 1, z])
+                    {
+                        //сталагмиты
+                        if (((sf > -0.5f && sf < -0.3f) || (sf > 0.3f && sf < 0.5f)) && Random.Range(0, 5) == 0)
+                        {
+                            Instantiate(stalagmites[Random.Range(0, stalagmites.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                        }
                     }
                 }
         /*int borders,matches;
@@ -284,7 +301,7 @@ public class marchingspace : MonoBehaviour
                             {
                                 if (!walkpoints.ContainsKey(calculatedvector))
                                 {
-                                    walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector));
+                                    walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,borders>0));
                                 }
                             }/*
                         else
@@ -297,15 +314,22 @@ public class marchingspace : MonoBehaviour
                 }
             }
         }
-        if(generator.isServer)foreach (var point in walkpoints)
+        if (generator.isServer)
         {
-            for (i = 0; i < neighborsTable.Length; ++i)
+            foreach (var point in walkpoints)
             {
-                if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step))
+              //  if (point.Value.isBorder)
                 {
-                    point.Value.friends.Add(point.Value.position + neighborsTable[i] * step);
+                    for (i = 0; i < neighborsTable.Length; ++i)
+                    {
+                        if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step))
+                        {
+                            point.Value.friends.Add(point.Value.position + neighborsTable[i] * step);
+                        }
+                    }
                 }
             }
+            generator.walkpointscount += walkpoints.Count;
         }
         mesh.vertices = fuckthislist.ToArray();
         mesh.triangles = triangles.ToArray();

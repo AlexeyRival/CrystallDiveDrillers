@@ -26,6 +26,32 @@ public class mule : NetworkBehaviour
         currentpoint = 0;
         if(path.Count>0)isStartWalking = true;
     }
+    private void SetLeg(GameObject leg, Vector3 vec, Vector3 startpoint,float height) {
+
+        bfr = Mathf.Sin(Vector3.Distance(startpoint, vec) * Mathf.PI) * 0.5f + height;
+        leg.transform.LookAt(new Vector3(vec.x, vec.y + bfr, vec.z));
+        leg.transform.Rotate(-90, 90, 90);
+    }
+    private void SetFoot(GameObject foot, Vector3 vec) {
+        foot.transform.LookAt(vec);
+        foot.transform.Rotate(-90, 90, 90);
+    }
+    private void SetFoot(GameObject foot, Vector3 vec, Vector3 rotator) {
+        foot.transform.LookAt(vec);
+        foot.transform.Rotate(rotator);
+    }
+    private Vector3 SlerpLeg(Vector3 startpoint, Vector3 targetpoint,Vector3 vec, out bool locker,float speed) {    
+        if (Vector3.Distance(startpoint, vec) > 0.001f) 
+        {
+            locker = true;
+            return Vector3.Slerp(vec, targetpoint, speed);
+        }
+        else 
+        { 
+            locker = false;
+            return vec;
+        }
+    }
     void Update()
     {
         if (isServer) {
@@ -50,36 +76,21 @@ public class mule : NetworkBehaviour
             }
         }
 
-        bfr = Mathf.Sin(Vector3.Distance(s_fr, v_fr) * Mathf.PI)*0.5f + 0.45f;
-        leg_fr.transform.LookAt(new Vector3(v_fr.x, v_fr.y+bfr, v_fr.z));
-        leg_fr.transform.Rotate(-90,90,90);
+        SetLeg(leg_fr,v_fr,s_fr,0.45f);
+        SetLeg(leg_fl,v_fl,s_fl,0.45f);
+        SetLeg(leg_br,v_br,s_br,0.45f);
+        SetLeg(leg_bl,v_bl,s_bl,0.45f);
 
-        bfr = Mathf.Sin(Vector3.Distance(s_fl, v_fl) * Mathf.PI) * 0.5f + 0.45f;
-        leg_fl.transform.LookAt(new Vector3(v_fl.x, v_fl.y + bfr, v_fl.z));
-        leg_fl.transform.Rotate(-90, 90, 90);
-
-        bfr = Mathf.Sin(Vector3.Distance(s_br, v_br) * Mathf.PI) * 0.5f + 0.45f;
-        leg_br.transform.LookAt(new Vector3(v_br.x, v_br.y + bfr, v_br.z));
-        leg_br.transform.Rotate(-90, 90, 90);
-
-        bfr = Mathf.Sin(Vector3.Distance(s_bl, v_bl) * Mathf.PI) * 0.5f + 0.45f;
-        leg_bl.transform.LookAt(new Vector3(v_bl.x, v_bl.y + bfr, v_bl.z));
-        leg_bl.transform.Rotate(-90, 90, 90);
-
-        foot_fr.transform.LookAt(v_fr);
-        foot_fr.transform.Rotate(-90, 90, 90);
-        foot_fl.transform.LookAt(v_fl);
-        foot_fl.transform.Rotate(-90, 90, 90);
-        foot_br.transform.LookAt(v_br);
-        foot_br.transform.Rotate(-90, 90, 90);
-        foot_bl.transform.LookAt(v_bl);
-        foot_bl.transform.Rotate(-90, 90, 90);
+        SetFoot(foot_fr,v_fr);
+        SetFoot(foot_fl, v_fl);
+        SetFoot(foot_br,v_br);
+        SetFoot(foot_bl,v_bl);
 
         spd = Time.deltaTime * 13f*speed;//4
-        if (Vector3.Distance(s_fr, v_fr) > 0.001f) { v_fr = Vector3.Slerp(v_fr, t_fr, spd); } else { lock_fr = false; }
-        if (Vector3.Distance(s_fl, v_fl) > 0.001f) { v_fl = Vector3.Slerp(v_fl, t_fl, spd); } else { lock_fl = false; }
-        if (Vector3.Distance(s_br, v_br) > 0.001f) { v_br = Vector3.Slerp(v_br, t_br, spd); } else { lock_br = false; }
-        if (Vector3.Distance(s_bl, v_bl) > 0.001f) { v_bl = Vector3.Slerp(v_bl, t_bl, spd); } else { lock_bl = false; }
+        v_fr = SlerpLeg(s_fr,t_fr,v_fr,out lock_fr,spd);
+        v_fl = SlerpLeg(s_fl,t_fl,v_fl,out lock_fl,spd);
+        v_bl = SlerpLeg(s_bl,t_bl,v_bl,out lock_bl,spd);
+        v_br = SlerpLeg(s_br,t_br,v_br,out lock_br,spd);
 
         if (Physics.Raycast(point_bl.transform.position, -point_bl.transform.up, out hit, 2.5f)) {
             if (Vector3.Distance(t_bl, hit.point) > 1f&&!(lock_bl||lock_br||lock_fl)) { 

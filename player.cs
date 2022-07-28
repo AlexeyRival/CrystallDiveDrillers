@@ -6,10 +6,11 @@ using UnityEngine.UI;
 
 public class player : NetworkBehaviour
 {
-    public GameObject head;
+    public GameObject head,diecamera;
     public AudioSource Audio;
     public float speed = 75f;
     private float sprint=1f;
+    private bool canJump;
     public GameObject sphereDestroyer,flare,death;
     public TextMesh hpobject;
     private Rigidbody rb;
@@ -24,15 +25,25 @@ public class player : NetworkBehaviour
     private float flarecooldown = 0;
     private int localhp = 101;
     private float magnitude;
-    private bool seeContainer, seeInteraction, gobackinteraction, missionselectorinteraction;
+    private bool seeContainer, seeInteraction,classchangeInteraction, gobackinteraction, missionselectorinteraction;
     private float containercooldown = 0;
     private GameObject targetobject;
     private bool truestart = false;
+    private customNetworkHUD network;
+
+    //движение
+    private float timerforcam;
+    private Vector3 moveVector;
+
+    //след игрока для жуков
+    public GameObject smell;
+    private GameObject thissmell;
 
     //смерть
     private bool deathInteraction;
     public static bool isDead;
     private bool isReviving;
+    private float prevrevivepoints;
 
     //щиты
     private int shield=100;
@@ -226,13 +237,17 @@ public class player : NetworkBehaviour
             AddPlayer(this, players.Count);
             players.Add(this);
         }
+        if (isServer) {
+            thissmell= Instantiate(smell, transform.position, transform.rotation);
+        }
     }
     void TrueStart()
     {
             Cursor.lockState = CursorLockMode.Locked;
             Cursor.visible = false;
-            CmdSetNick(GameObject.Find("network").GetComponent<customNetworkHUD>().nickname);
-            CmdSetClass(GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass);
+            network = GameObject.Find("network").GetComponent<customNetworkHUD>();
+            CmdSetNick(network.nickname);
+            CmdSetClass(network.characterclass);
             CmdDmg(1);
             hpobject.gameObject.SetActive(false);
             UIobject = GameObject.Find("Canvas").transform.Find("UI").gameObject;
@@ -276,10 +291,33 @@ public class player : NetworkBehaviour
                 mousedelta.y = Input.GetAxis("Mouse Y");
                 transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
                 head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
-                if (Input.GetKey(KeyCode.W)) { transform.Translate(0, 0, Time.deltaTime * 0.1f * speed*sprint); }
-                if (Input.GetKey(KeyCode.A)) { transform.Translate(Time.deltaTime * -0.1f * speed * sprint, 0, 0); }
-                if (Input.GetKey(KeyCode.S)) { transform.Translate(0, 0, Time.deltaTime * -0.1f * speed * sprint); }
-                if (Input.GetKey(KeyCode.D)) { transform.Translate(Time.deltaTime * 0.1f * speed * sprint, 0, 0); }
+                timerforcam += Time.deltaTime;
+                if (Input.GetKey(KeyCode.W)) {
+                  //  moveVector.z = Time.deltaTime * 0.1f * speed * sprint;
+                        transform.Translate(0, 0, Time.deltaTime * 0.1f * speed*sprint);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f, Mathf.Cos(timerforcam*Mathf.PI * 4) *0.01f, 0);
+                }
+                if (Input.GetKey(KeyCode.A))
+                {
+                  //  moveVector.x = Time.deltaTime * -0.1f * speed * sprint;
+                    transform.Translate(Time.deltaTime * -0.1f * speed * sprint, 0, 0);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f, 0);
+                }
+                if (Input.GetKey(KeyCode.S))
+                {
+                  //  moveVector.z = Time.deltaTime * -0.1f * speed * sprint;
+                    transform.Translate(0, 0, Time.deltaTime * -0.1f * speed * sprint);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f, 0);
+                }
+                if (Input.GetKey(KeyCode.D))
+                {
+                 //   moveVector.x = Time.deltaTime*0.1f * speed * sprint;
+                    transform.Translate(Time.deltaTime * 0.1f * speed * sprint, 0, 0);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI*2) * 0.01f, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f, 0);
+                }
+               // moveVector = transform.TransformDirection(moveVector);
+               // if(moveVector!=new Vector3())rb.velocity = new Vector3(moveVector.x, rb.velocity.y, moveVector.z);
+               // moveVector = new Vector3();
                 if (Input.GetKey(KeyCode.E))
                 {
                     if (seeContainer && containercooldown <= 0)
@@ -316,12 +354,17 @@ public class player : NetworkBehaviour
                         missionMenuController.GenerateMissions();
                         //generator.ShowMissions();
                     }
+                    if (classchangeInteraction) {
+                        network.OpenClassSelector();
+                        Cursor.lockState = CursorLockMode.None;
+                        Cursor.visible = true;
+                    }
                 }
                 else
                 {
                     CmdIsDrop(false);
                 }
-                if (Input.GetKeyDown(KeyCode.Space)) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
+                if (Input.GetKeyDown(KeyCode.Space)&&canJump) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
                 sprint = 1f;
                 if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.25f;}
                 if (Input.GetKey(KeyCode.Mouse0))
@@ -358,6 +401,7 @@ public class player : NetworkBehaviour
                 gobackinteraction = false;
                 deathInteraction = false;
                 seeContainer = false;
+                classchangeInteraction = false;
                 Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
                 if (hit.transform)
                 {
@@ -375,6 +419,11 @@ public class player : NetworkBehaviour
                     {
                         seeInteraction = true;
                         missionselectorinteraction = true;
+                    }
+                    if (hit.collider.transform.name == "ClassChanger")
+                    {
+                        seeInteraction = true;
+                        classchangeInteraction = true;
                     }
                     if (hit.collider.transform.CompareTag("Player")&&hit.collider.transform.GetComponent<player>().hp<=0)
                     {
@@ -394,6 +443,7 @@ public class player : NetworkBehaviour
                 if (hp < 0)
                 {
                     isDead = true;
+                    diecamera.SetActive(true);
                     CmdDie();
                 }
 
@@ -407,6 +457,12 @@ public class player : NetworkBehaviour
 
                 //инвентарь
                 UpdateResources();
+
+                //обновление класса при смене
+                if (network.characterclass != characterclass) {
+                    CmdSetClass(network.characterclass);
+                    classpic.sprite = classes[network.characterclass].icon;
+                }
 
                 //возрождение другого
                 if (isReviving)
@@ -429,9 +485,25 @@ public class player : NetworkBehaviour
 
             }
             else {
+                mousedelta.x = Input.GetAxis("Mouse X");
+                mousedelta.y = Input.GetAxis("Mouse Y");
+                diecamera.transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
+                diecamera.transform.GetChild(0).transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
+
+                if (prevrevivepoints != generator.GetRevivePoints(nickname))
+                {
+                    UIRevive.SetActive(true);
+                    UIRevive.GetComponent<Slider>().value = generator.GetRevivePoints(nickname) * 0.01f;
+                }
+                else { 
+                    UIRevive.SetActive(false);
+                }
+
+                prevrevivepoints = generator.GetRevivePoints(nickname)*0.01f;
                 if (hp == 100)
                 {
                     isDead = false;
+                    diecamera.SetActive(false);
                 }
                 else {
                     CmdTryRevive();
@@ -441,6 +513,13 @@ public class player : NetworkBehaviour
         if (localhp != hp) {
             localhp = hp;
             if (!isLocalPlayer) { hpobject.text = nickname + "\n" + hp; } else { UIhp.text = hp.ToString(); hpbar.value = hp*0.01f; }
+        }
+        canJump = false;
+        if (Physics.Raycast(transform.position, -transform.up, out hit, 1.5f)) {
+            if (isLocalPlayer) { canJump = true; }
+            if (isServer && hit.collider.transform.CompareTag("Chunk")) {
+                thissmell.transform.position = transform.position;//hit.point;
+            }
         }
         
         if (generator.platformstatus==1||generator.platformstatus==3) { if (isLocalPlayer&&!isClear) { Clear(); } transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
@@ -487,6 +566,18 @@ public class player : NetworkBehaviour
             if (magnitude > 10f) {
                 Dmg((int)((magnitude-10)*4));
             }
+        }
+    }
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.gameObject.CompareTag("Damager"))
+        {
+            if (isLocalPlayer)
+            {
+                int dmg = int.Parse(other.gameObject.name);
+                Dmg(dmg);
+            }
+            Destroy(other.gameObject);
         }
     }
     public static readonly int[] levels = {

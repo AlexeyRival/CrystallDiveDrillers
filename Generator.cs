@@ -21,7 +21,7 @@ public class Generator : NetworkBehaviour
     public List<Vector3> tunnelpoints;
     public List<Resource> resources;
     private int generatedchunks = 0;
-    private int generatedfriends = 0;
+    public int generatedpoints = 0;
     private int generatingphase = 0;
     public bool isGeneratingCompleted, isStart;
     private questtype currentquest;
@@ -54,7 +54,8 @@ public class Generator : NetworkBehaviour
     private int targetxp;
 
     //поиск пути
-    public List<walkpoint> walkpoints;
+    //public List<walkpoint> walkpoints;
+    public int walkpointscount=0;
     public Vector3 pathendpoint,pathstartpoint;
     public List<int> path;
 
@@ -94,10 +95,17 @@ public class Generator : NetworkBehaviour
     }
     public void CmdMoveMuleMarker(Vector3 newpos) {
         mulemarker.transform.position = newpos;
-        pathendpoint = mule.transform.position;//newpos;//
-        pathstartpoint = newpos; //mule.transform.position;//
+        //pathendpoint = mule.transform.position;//newpos;//
+        //pathstartpoint = newpos; //mule.transform.position;//
+        //List<Vector3> bufferpath = CalculatePath();
+        mule.GetComponent<mule>().SetPath(GetPath(mule.transform.position,newpos));
+    }
+    public List<Vector3> GetPath(Vector3 start,Vector3 end) {
+        pathendpoint = start;
+        pathstartpoint = end;
         List<Vector3> bufferpath = CalculatePath();
-        mule.GetComponent<mule>().SetPath(bufferpath);
+        bufferpath.RemoveAt(0);
+        return bufferpath;
     }
     [Command]
     public void CmdAddResource(int id, int amout) {
@@ -110,7 +118,7 @@ public class Generator : NetworkBehaviour
     [Command]
     public void CmdSwitchDelete() {
         deleteitall = !deleteitall;
-        walkpoints = new List<walkpoint>();
+      //  walkpoints = new List<walkpoint>();
     }
     [Command]
     public void CmdClearResources() {
@@ -350,11 +358,11 @@ public class Generator : NetworkBehaviour
         public Vector3 position;
         public List<Vector3> friends;
         public float weight;
-        public Dictionary<string, float> trails;
-        public walkpoint(Vector3 position) {
+        public bool isBorder;
+        public walkpoint(Vector3 position,bool isBorder) {
             this.position = position;
             friends = new List<Vector3>();
-            trails = new Dictionary<string, float>();
+            this.isBorder = isBorder;
         }
     }
 
@@ -383,7 +391,9 @@ public class Generator : NetworkBehaviour
             questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
         }
         center = new Vector3((sizeX) * 57 / 2, (sizeY) * 57 / 2, (sizeZ-1) * 57 / 2);
-        walkpoints = new List<walkpoint>();
+        //walkpoints = new List<walkpoint>();
+        walkpointscount = 0;
+        generatedpoints = 0;
         path = new List<int>();
         startpoints = new List<Vector3>();
         cavepoints = new List<Vector3>();
@@ -454,13 +464,19 @@ public class Generator : NetworkBehaviour
             {
                 for (int z = 0; z < sizeZ; ++z)
                 {
-                    ob = Instantiate(cluster, new Vector3(x, y, z) * 57, Quaternion.identity);
+                    /*ob = Instantiate(cluster, new Vector3(x, y, z) * 57, Quaternion.identity);
                     for (int i = 0; i < ob.transform.childCount; ++i) {
                         ob.transform.GetChild(i).gameObject.name = $"{x}:{y}:{z}:{i}";
                         objs.Add(ob.transform.GetChild(i).gameObject);
+                    }*/
+                    for (int i = 0; i < cluster.transform.childCount; ++i)
+                    {
+                        ob = Instantiate(cluster.transform.GetChild(i).gameObject, new Vector3(x, y, z) * 57 + cluster.transform.GetChild(i).transform.position, Quaternion.identity);
+                        ob.transform.name = $"{x}:{y}:{z}:{i}";
+                        objs.Add(ob);
+                        ++generatedchunks;
+                        yield return new WaitForEndOfFrame();//new WaitForSeconds(0.2f);
                     }
-                    ++generatedchunks;
-                    yield return new WaitForSeconds(0.2f);
                 }
             }
         }
@@ -515,7 +531,14 @@ public class Generator : NetworkBehaviour
         return false;
     }
     public float GetLoadingStatus() {
-        return (generatedchunks * 9f) / (sizeX * sizeY * sizeZ * 9f);
+        if (isServer)
+        {
+            //print(generatedchunks +"/"+ (sizeX * sizeY * sizeZ * 21f));
+                return generatedchunks / (sizeX * sizeY * sizeZ * 27f) * 0.9f;
+        }
+        else { 
+            return generatedchunks / (sizeX * sizeY * sizeZ * 27f);
+        }
     }
     public void OrganizePlayersOnLoading() {
         playersprogress = new float[player.players.Count];
@@ -626,12 +649,15 @@ public class Generator : NetworkBehaviour
             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Cluster").Length; ++i) {
                 Destroy(GameObject.FindGameObjectsWithTag("Cluster")[i]);
             }
+            for (int i = 0; i < GameObject.FindGameObjectsWithTag("Bug").Length; ++i) {
+                Destroy(GameObject.FindGameObjectsWithTag("Bug")[i]);
+                NetworkServer.Destroy(GameObject.FindGameObjectsWithTag("Bug")[i]);
+            }
             isStart = false;
             isStartGenerate = false;
             isGeneratingCompleted = false;
             manager.transform.gameObject.SetActive(false);
             generatedchunks = 0;
-            generatedfriends = 0;
             generatingphase = 0;
             //if (isServer) { CmdClearResources(); }
         }
@@ -649,18 +675,18 @@ public class Generator : NetworkBehaviour
             }
             if (targetxp > 40000)
             {
-                player.xp+=1000;
-                targetxp-=1000;
+                player.xp+=500;
+                targetxp-=500;
             }else
-            if (targetxp > 4000)
+            if (targetxp > 5000)
             {
-                player.xp+=100;
-                targetxp-=100;
+                player.xp+=40;
+                targetxp-=40;
             }else
             if (targetxp > 200)
             {
-                player.xp+=10;
-                targetxp-=10;
+                player.xp+=5;
+                targetxp-=5;
             }
             else
             {
@@ -710,19 +736,19 @@ public class Generator : NetworkBehaviour
         }
         if (isShowDebugPathFinding) {
             Gizmos.color = new Color(0, 0.4f, 0.8f);
-            for (int i = 0; i < walkpoints.Count; ++i)
+           // for (int i = 0; i < walkpoints.Count; ++i)
             {
-                if (walkpoints[i].weight != 0)
+            //    if (walkpoints[i].weight != 0)
                 {
-                    Gizmos.color = new Color(0.4f, 0.8f*0.01f*walkpoints[i].weight, 0);
+            //        Gizmos.color = new Color(0.4f, 0.8f*0.01f*walkpoints[i].weight, 0);
                 }
-                Gizmos.DrawCube(walkpoints[i].position, new Vector3(0.5f, 0.5f, 0.5f));
+           //     Gizmos.DrawCube(walkpoints[i].position, new Vector3(0.5f, 0.5f, 0.5f));
                 Gizmos.color = new Color(0, 0.4f, 0.8f);
             }
             Gizmos.color = new Color(0.6f, 0, 0.6f);
             for (int i = 0; i < path.Count; ++i)
             {
-                Gizmos.DrawCube(walkpoints[path[i]].position, new Vector3(0.6f, 0.6f, 0.6f));
+             //   Gizmos.DrawCube(walkpoints[path[i]].position, new Vector3(0.6f, 0.6f, 0.6f));
             }
             Gizmos.color = new Color(0.4f, 0.8f,0);
             Gizmos.DrawCube(pathstartpoint, new Vector3(0.5f, 0.5f, 0.5f));
