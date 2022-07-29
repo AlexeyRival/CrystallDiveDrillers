@@ -139,6 +139,9 @@ public class bug : NetworkBehaviour
                 {
                     ++currentpoint;
                 }
+                if (Vector3.Distance(target.transform.position, transform.position) < 3) {
+                    isStartWalking = false;
+                }
             }
             else
             {
@@ -146,7 +149,7 @@ public class bug : NetworkBehaviour
                 {
                     if (!target)
                     {
-                        if (visiontimer <= 0)
+                        if (visiontimer <= 0&&GameObject.FindGameObjectsWithTag("Smell").Length>0)
                         {
                             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Smell").Length; ++i)
                             {
@@ -176,14 +179,17 @@ public class bug : NetworkBehaviour
                         }
                     }
                     else {
-                        if (Vector3.Distance(transform.position, target.transform.position) > 3f+agression)
+                        if (Vector3.Distance(transform.position, target.transform.position) > 3f)
                         {
                             if (updatetimer == 0)
                             {
                                 try
                                 {
-                                    SetPath(generator.GetPath(transform.position, target.transform.position+new Vector3(Random.Range(-2,2),0, Random.Range(-2, 2))));
-                                    path.Add(path[path.Count-1]+new Vector3(Random.Range(-2, 2), 0, Random.Range(-2, 2)));
+                                    SetPath(generator.GetPath(transform.position, target.transform.position+new Vector3(Random.Range(-2f,2f),0, Random.Range(-2f, 2f))));
+                                    path.Add(path[path.Count-1]+new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f)));
+                                    for (int i = 0; i < path.Count; ++i) { 
+                                        path[i]+= new Vector3(Random.Range(-0.5f, 0.5f), 0, Random.Range(-0.5f, 0.5f));
+                                }
                                 }
                                 catch { updatetimer = 1000 + Random.Range(-100, 100); }
                                 if (Random.Range(0, 4) != 0)
@@ -411,12 +417,17 @@ public class bug : NetworkBehaviour
                     else if (attacktimer < 0.7f)
                     {
                         if (!isAttack) { isAttack = true; CmdAttack(10); }
-                        t_ar = target.transform.position;
-                        s_ar = target.transform.position;
+                        if (target)
+                        {
+                            t_ar = target.transform.position;
+                            s_ar = target.transform.position;
+                        }
                         lock_ar = true;
-
-                        t_al = target.transform.position;
-                        s_al = target.transform.position;
+                        if (target)
+                        {
+                            t_al = target.transform.position;
+                            s_al = target.transform.position;
+                        }
                         lock_al = true;
                     }
                 }

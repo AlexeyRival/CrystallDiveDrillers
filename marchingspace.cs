@@ -15,6 +15,7 @@ public class marchingspace : MonoBehaviour
     public Vector3 center;
     public List<Resource> resources;
     public GameObject[] flowers;
+    public GameObject[] grasses;
     public GameObject[] stalagmites;
     public Generator generator;
     private FastNoiseLite noise, secondnoise,thirdnoise;
@@ -169,6 +170,10 @@ public class marchingspace : MonoBehaviour
                     //пол
                     if (y > 0 && space[x, y, z] && !space[x, y - 1, z])
                     {
+                        if (sf > 0f)
+                        {
+                            Instantiate(grasses[Random.Range(0, grasses.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                        }
                         if (sf > 0.8f)
                         {
                             Instantiate(flowers[Random.Range(0, flowers.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
@@ -216,7 +221,7 @@ public class marchingspace : MonoBehaviour
         walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         meshData bufdata;
         float f,sf,tf;
-        int fcon = 256;//4 32 128
+        float fcon = 256;//4 32 128
         int max = 0;
         int x, y, z, i;
         int borders, matches;
@@ -231,9 +236,9 @@ public class marchingspace : MonoBehaviour
                     {
                         bufdata.verts[i] *= step;
                         bufdata.verts[i] = new Vector3(bufdata.verts[i].x + x * step, bufdata.verts[i].y + y * step, bufdata.verts[i].z + z * step);
-                        f = noise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon)*0.25f;
-                        sf = secondnoise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon) * 0.25f;
-                        tf = thirdnoise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon) * 0.25f;
+                        f = noise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon)*0.175f;//0.25f
+                        sf = secondnoise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon) * 0.175f;
+                        tf = thirdnoise.GetNoise((bufdata.verts[i].x + transform.position.x) * fcon, (bufdata.verts[i].y + transform.position.y) * fcon, (bufdata.verts[i].z + transform.position.z) * fcon) * 0.175f;
                         bufdata.verts[i] += new Vector3(sf, f, tf);
                         //uvs.Add(new Vector2(Mathf.Sin(bufdata.verts[i].x / sizeX), Mathf.Cos(bufdata.verts[i].z / sizeZ) * 0.5f + Mathf.Cos(bufdata.verts[i].y / sizeY) * 0.5f));
                         //uvs.Add(new Vector2(bufdata.verts[i].x/sizeX*0.5f+bufdata.verts[i].y/sizeY*0.5f,bufdata.verts[i].z / sizeZ*0.5f + bufdata.verts[i].y / sizeY * 0.5f));

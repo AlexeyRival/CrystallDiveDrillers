@@ -10,7 +10,7 @@ public class Generator : NetworkBehaviour
     public int sizeX = 2;    
     public int sizeY = 2;
     public int sizeZ = 2;
-    public GameObject platform, undestroyableground, blackscreen;
+    public GameObject platform, planet, hub, blackscreen;
     public GameObject cluster;
     public GameObject mule, mulemarker;
     public ChunkManager manager;
@@ -563,6 +563,8 @@ public class Generator : NetworkBehaviour
         if (isStartGenerate) {
             if (!isStart) {
                 isStart = true;
+                planet.SetActive(false);
+                hub.SetActive(false);
                 OrganizePlayersOnLoading();
             }
             int playersready = 0;
@@ -646,6 +648,8 @@ public class Generator : NetworkBehaviour
         if (deleteitall != deleteitalllocal) {
             CloseMission(isFailure); 
             deleteitalllocal = deleteitall;
+            planet.SetActive(true);
+            hub.SetActive(true);
             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Cluster").Length; ++i) {
                 Destroy(GameObject.FindGameObjectsWithTag("Cluster")[i]);
             }

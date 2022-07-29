@@ -48,6 +48,7 @@ public class player : NetworkBehaviour
     //щиты
     private int shield=100;
     private float shieldcooldown;
+    private Image shieldpic;
 
     //инвентарь и всё прочее
     [SyncVar]
@@ -152,6 +153,7 @@ public class player : NetworkBehaviour
         if (dmg-shield < 10)
         {
             shield -= dmg;
+            shieldpic.color = new Color(1, 1, 1, dmg * 0.02f);
             if (shield < 0) shield = 0;
         }
         else {
@@ -258,6 +260,7 @@ public class player : NetworkBehaviour
             shldbar = UIobject.transform.Find("ShieldImage").transform.Find("ShieldBorder").GetComponent<Slider>();
             flarebar = UIobject.transform.Find("Flare").GetComponent<Slider>();
             classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
+            shieldpic = UIobject.transform.Find("Shield").GetComponent<Image>();
             classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
             UIInventory = UIobject.transform.Find("Inventory").gameObject;
             UIRevive = UIobject.transform.Find("Revive").gameObject;
@@ -295,25 +298,25 @@ public class player : NetworkBehaviour
                 if (Input.GetKey(KeyCode.W)) {
                   //  moveVector.z = Time.deltaTime * 0.1f * speed * sprint;
                         transform.Translate(0, 0, Time.deltaTime * 0.1f * speed*sprint);
-                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f, Mathf.Cos(timerforcam*Mathf.PI * 4) *0.01f, 0);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f*sprint, Mathf.Cos(timerforcam*Mathf.PI * 4) *0.01f * sprint, 0);
                 }
                 if (Input.GetKey(KeyCode.A))
                 {
                   //  moveVector.x = Time.deltaTime * -0.1f * speed * sprint;
                     transform.Translate(Time.deltaTime * -0.1f * speed * sprint, 0, 0);
-                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f, 0);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f * sprint, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f * sprint, 0);
                 }
                 if (Input.GetKey(KeyCode.S))
                 {
                   //  moveVector.z = Time.deltaTime * -0.1f * speed * sprint;
                     transform.Translate(0, 0, Time.deltaTime * -0.1f * speed * sprint);
-                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f, 0);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f * sprint, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f * sprint, 0);
                 }
                 if (Input.GetKey(KeyCode.D))
                 {
                  //   moveVector.x = Time.deltaTime*0.1f * speed * sprint;
                     transform.Translate(Time.deltaTime * 0.1f * speed * sprint, 0, 0);
-                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI*2) * 0.01f, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f, 0);
+                    head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI*2) * 0.01f * sprint, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f * sprint, 0);
                 }
                // moveVector = transform.TransformDirection(moveVector);
                // if(moveVector!=new Vector3())rb.velocity = new Vector3(moveVector.x, rb.velocity.y, moveVector.z);
@@ -509,8 +512,11 @@ public class player : NetworkBehaviour
                     CmdTryRevive();
                 }
             }
+            if (shieldpic.color.a > 0) { shieldpic.color = new Color(1, 1, 1, shieldpic.color.a-0.15f*Time.deltaTime); }
+            if (shieldpic.color.a < 0) { shieldpic.color = new Color(1, 1, 1, 0); }
         }
         if (localhp != hp) {
+            
             localhp = hp;
             if (!isLocalPlayer) { hpobject.text = nickname + "\n" + hp; } else { UIhp.text = hp.ToString(); hpbar.value = hp*0.01f; }
         }
