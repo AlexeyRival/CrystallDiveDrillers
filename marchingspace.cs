@@ -21,12 +21,14 @@ public class marchingspace : MonoBehaviour
     private FastNoiseLite noise, secondnoise,thirdnoise;
     public List<marchingspace> neighbors, friends;
     public Dictionary<Vector3, Generator.walkpoint> walkpoints;
+    public Dictionary<Vector3, byte> borderpoints;
 
     void Start()
     {
         friends = new List<marchingspace>();
         neighbors = new List<marchingspace>();
         walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
+        borderpoints = new Dictionary<Vector3, byte>();
         generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
         space = new bool[sizeX, sizeY, sizeZ];
         shift = new float[sizeX, sizeY, sizeZ];
@@ -172,7 +174,7 @@ public class marchingspace : MonoBehaviour
                     {
                         if (sf > 0f)
                         {
-                            Instantiate(grasses[Random.Range(0, grasses.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                            Instantiate(grasses[Random.Range(0, grasses.Length)], new Vector3(x + transform.position.x + Random.Range(-0.125f, 0.125f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.125f, 0.125f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
                         }
                         if (sf > 0.8f)
                         {
@@ -219,6 +221,7 @@ public class marchingspace : MonoBehaviour
         List<int> triangles = new List<int>();
         List<Vector2> uvs = new List<Vector2>();
         walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
+        borderpoints = new Dictionary<Vector3, byte>();
         meshData bufdata;
         float f,sf,tf;
         float fcon = 256;//4 32 128
@@ -306,7 +309,11 @@ public class marchingspace : MonoBehaviour
                             {
                                 if (!walkpoints.ContainsKey(calculatedvector))
                                 {
-                                    walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,borders>0));
+                                    //   walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,borders>0));
+                                    walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,true));
+                                    if (x < 3 || x > sizeX - 4 || y < 3 || y > sizeY - 4 || z < 3 || z > sizeZ - 4) {
+                                    borderpoints.Add(calculatedvector, 0);
+                                    }
                                 }
                             }/*
                         else
@@ -323,7 +330,7 @@ public class marchingspace : MonoBehaviour
         {
             foreach (var point in walkpoints)
             {
-              //  if (point.Value.isBorder)
+             //   if (point.Value.isBorder)
                 {
                     for (i = 0; i < neighborsTable.Length; ++i)
                     {
@@ -399,25 +406,24 @@ public class marchingspace : MonoBehaviour
     }
     private void SetCorners() {
         int count = 0;
-        for (int i = 0; i < friends.Count; ++i)
-        {
-            foreach (var point in walkpoints) if (point.Value.weight!=0)
+        foreach (var point in borderpoints) if (walkpoints[point.Key].weight != 0)//
             {
-                for (int ii = 0; ii < neighborsTable.Length; ++ii)
+                for (int i = 0; i < friends.Count; ++i)
                 {
-                    if (friends[i].walkpoints.ContainsKey(point.Key + neighborsTable[ii]))
+                    for (int ii = 0; ii < neighborsTable.Length; ++ii)
                     {
-                        ++count;
-                        if (friends[i].walkpoints[point.Key + neighborsTable[ii]].weight == 0)
+                        if (friends[i].borderpoints.ContainsKey(point.Key + neighborsTable[ii]))
                         {
-                            friends[i].walkpoints[point.Key + neighborsTable[ii]].weight = point.Value.weight + 1;
+                            ++count;
+                            if (friends[i].walkpoints[point.Key + neighborsTable[ii]].weight == 0)
+                            {
+                                friends[i].walkpoints[point.Key + neighborsTable[ii]].weight = walkpoints[point.Key].weight + 1;
+                            }
+                            Debug.DrawRay(point.Key, neighborsTable[ii] * step, new Color(0.77f, 0.34f, 0.44f, 0.34f), 10f);
                         }
-                        Debug.DrawRay(point.Key, neighborsTable[ii] * step, new Color(0.77f, 0.34f, 0.44f, 0.34f), 10f);
                     }
                 }
             }
-        }
-        //print($"присвоено {count} граничных точек");
     }
     public void ClearWeights() {
         foreach (var point in walkpoints) {
@@ -565,27 +571,33 @@ public class marchingspace : MonoBehaviour
     }
 
     public static readonly Vector3[] neighborsTable = {
-        new Vector3(1,0,0),
-        new Vector3(-1,0,0),
-        new Vector3(0,1,0),
-        new Vector3(0,-1,0),
-        new Vector3(0,0,1),
-        new Vector3(0,0,-1),
-
-        new Vector3(1,0,1),
-        new Vector3(-1,0,1),
-        new Vector3(0,1,1),
-        new Vector3(0,-1,1),
-
-        new Vector3(1,0,-1),
+        new Vector3(-1,-1,-1),
+        new Vector3(-1,-1,0),
+        new Vector3(-1,-1,1),
         new Vector3(-1,0,-1),
-        new Vector3(0,1,-1),
-        new Vector3(0,-1,-1),
-
-        new Vector3(1,-1,0),
+        new Vector3(-1,0,0),
+        new Vector3(-1,0,1),
+        new Vector3(-1,1,-1),
         new Vector3(-1,1,0),
+        new Vector3(-1,1,1),
+        new Vector3(0,-1,-1),
+        new Vector3(0,-1,0),
+        new Vector3(0,-1,1),
+        new Vector3(0,0,-1),
+        new Vector3(0,0,0),
+        new Vector3(0,0,1),
+        new Vector3(0,1,-1),
+        new Vector3(0,1,0),
+        new Vector3(0,1,1),
+        new Vector3(1,-1,-1),
+        new Vector3(1,-1,0),
+        new Vector3(1,-1,1),
+        new Vector3(1,0,-1),
+        new Vector3(1,0,0),
+        new Vector3(1,0,1),
+        new Vector3(1,1,-1),
         new Vector3(1,1,0),
-        new Vector3(-1,-1,0)
+        new Vector3(1,1,1)
     };
     private readonly Vector3[] trianglesTable = {
         new Vector3(0.5f,0,0),

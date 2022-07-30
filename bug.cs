@@ -16,7 +16,7 @@ public class bug : NetworkBehaviour
     private int currentpoint;
     public Transform rotator;
 
-    public GameObject attacksphere;
+    public GameObject attacksphere, hitsphere;
 
     public Slider hpbar;
     public GameObject back;//спина
@@ -50,14 +50,25 @@ public class bug : NetworkBehaviour
         Destroy(ob, 3f);
         NetworkServer.Spawn(ob);
     }
+    [Command]
+    private void CmdDmg(int dmg) {
+        hp -= dmg;
+    }
+    public void Dmg(int dmg, GameObject collider) {
+        Destroy(Instantiate(hitsphere, collider.transform.position, transform.rotation), 1f);
+        transform.Rotate(0.6f * Random.Range(-1f*dmg, 1f * dmg), 0.6f * Random.Range(-1f * dmg, 1f * dmg), 0.6f*Random.Range(-1f * dmg, 1f * dmg));
+        transform.Translate(0.03f * Random.Range(-1f*dmg, 1f * dmg), 0, 0.03f*Random.Range(-1f * dmg, 1f * dmg));
+        CmdDmg(dmg);
+    }
     private void DropAll()
     {
+        hpbar.gameObject.SetActive(false);
         DropChild(transform.GetChild(0));
         GetComponent<Rigidbody>().constraints = RigidbodyConstraints.None;
         GetComponent<Rigidbody>().mass = 1f;
         GetComponent<Rigidbody>().useGravity = true;
 
-        GetComponent<Rigidbody>().AddRelativeForce(0,10f,0,ForceMode.Impulse);
+        GetComponent<Rigidbody>().AddRelativeForce(0,50f,0,ForceMode.Impulse);
     }
         private void DropChild(Transform trans) {
         if (trans.GetComponent<CapsuleCollider>()) {
@@ -65,6 +76,7 @@ public class bug : NetworkBehaviour
             if (!trans.GetComponent<Rigidbody>())
             {
                 trans.gameObject.AddComponent<Rigidbody>();
+                trans.gameObject.GetComponent<Rigidbody>().AddForce(0, 5f, 0, ForceMode.Impulse);
                 if (trans.parent && trans.parent.GetComponent<Rigidbody>()) {
                     trans.gameObject.AddComponent<CharacterJoint>();
                     trans.gameObject.GetComponent<CharacterJoint>().connectedBody = trans.parent.GetComponent<Rigidbody>();
@@ -119,6 +131,7 @@ public class bug : NetworkBehaviour
         currentpoint = 0;
         if (path.Count > 0) isStartWalking = true;
     }
+    
     private void Start()
     {
         generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
@@ -153,14 +166,14 @@ public class bug : NetworkBehaviour
                         {
                             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Smell").Length; ++i)
                             {
-                                if (Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Smell")[i].transform.position) < 40f)
+                                if (Random.Range(0,3)==0&&Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Smell")[i].transform.position) < 40f)
                                 {
                                     target = GameObject.FindGameObjectsWithTag("Smell")[i];
                                     visiontimer = 30f;
                                     break;
                                 }
                             }
-                            if (!target)
+                            if(false)// (!target)
                             {
                                 for (int i = 0; i < GameObject.FindGameObjectsWithTag("Player").Length; ++i)
                                 {
@@ -437,6 +450,7 @@ public class bug : NetworkBehaviour
         //hp
         if (localhp != hp) {
             localhp = hp;
+            //Destroy(Instantiate(hitsphere, transform.position, transform.rotation), 1f);
             hpbar.value = localhp * 1f / maxhp;
         }
         if (hp <= 0) {
@@ -454,8 +468,12 @@ public class bug : NetworkBehaviour
         if (isServer)
         {
             if (collision.gameObject.CompareTag("Destroyer")) {
-                hp -= 15;
+                Dmg(15,collision.other.gameObject);
             }
+        }
+        if (collision.gameObject.CompareTag("Destroyer"))
+        {
+            Destroy(Instantiate(hitsphere, collision.contacts[0].point, transform.rotation), 1f);
         }
     }
     public enum state {

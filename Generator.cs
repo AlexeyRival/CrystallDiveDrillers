@@ -176,7 +176,7 @@ public class Generator : NetworkBehaviour
             UIInventory.transform.GetChild(i).gameObject.SetActive(resourcesCount[i] > 0);
             if (resourcesCount[i] > 0)
             {
-                UIInventory.transform.GetChild(i).GetChild(1).GetComponent<Text>().text = resourcesCount[i].ToString();
+                UIInventory.transform.GetChild(i).GetChild(3).GetComponent<Text>().text = resourcesCount[i].ToString();
                 ++activecount;
             }
         }

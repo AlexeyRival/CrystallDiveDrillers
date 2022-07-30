@@ -6,12 +6,15 @@ using UnityEngine.UI;
 
 public class player : NetworkBehaviour
 {
-    public GameObject head,diecamera;
+    public GameObject head,diecamera,slot1,slot10;
+    public GameObject rotator;
+    public Weapon weapon;
     public AudioSource Audio;
     public float speed = 75f;
     private float sprint=1f;
     private bool canJump;
-    public GameObject sphereDestroyer,flare,death;
+    private bool canUpJump;
+    public GameObject sphereDestroyer,flare,grenade;
     public TextMesh hpobject;
     private Rigidbody rb;
     private Vector3 mousedelta;
@@ -45,6 +48,9 @@ public class player : NetworkBehaviour
     private bool isReviving;
     private float prevrevivepoints;
 
+    //оружие
+    private float grenadecooldown=0;
+
     //щиты
     private int shield=100;
     private float shieldcooldown;
@@ -53,10 +59,13 @@ public class player : NetworkBehaviour
     //инвентарь и всё прочее
     [SyncVar]
     public int characterclass=-1;
+    [SyncVar]
+    public int currentslot=0;
+    private int localslot = 0;
     public characterclass[] classes;
-    public GameObject UIobject,UIInventory,UIRevive;
+    public GameObject UIobject,UIInventory,UIRevive, crosshair;
     public Text UIhp,UIshld;
-    public Slider hpbar, shldbar, flarebar;
+    public Slider hpbar, shldbar, flarebar,grenadebar;
     public Image classpic;
     public GameObject expscreen;
 
@@ -118,6 +127,13 @@ public class player : NetworkBehaviour
         NetworkServer.Spawn(ob);
     }
     [Command]
+    void CmdSpawnGrenade() {
+        GameObject ob= Instantiate(grenade, head.transform.position, head.transform.rotation);
+        ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20,ForceMode.Impulse);
+        Destroy(ob, 30f);
+        NetworkServer.Spawn(ob);
+    }
+    [Command]
     void CmdAddResource(int id,int amout) {
         resourcesCount[id]+=amout;
         if(!isLocalPlayer)if (amout < 0) {
@@ -140,6 +156,10 @@ public class player : NetworkBehaviour
     [Command]
     void CmdSetClass(int characterclass) {
         this.characterclass = characterclass;
+    }
+    [Command]
+    void CmdSetSlot(int slot) {
+        currentslot = slot;
     }
     [Command]
     void CmdDmg(int dmg) {
@@ -178,6 +198,28 @@ public class player : NetworkBehaviour
                 CmdSpawnDestroyer(hit.point);
             }
     }
+    public void Fire() {
+        head.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*2, 0, 0);
+        transform.Rotate(0, Random.Range(-weapon.recoil, weapon.recoil)*2, 0);
+        slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
+        Audio.PlayOneShot(weapon.sound);
+        Destroy(Instantiate(weapon.firesplash, slot1.transform.GetChild(0).transform.position, slot1.transform.GetChild(0).transform.rotation,slot1.transform),0.4f);
+        if (Physics.Raycast(head.transform.position, head.transform.forward, out hit, 50)) {
+            if (hit.transform.gameObject.CompareTag("Bug"))
+            {
+                hit.transform.GetComponent<bug>().Dmg(weapon.dmg, hit.collider.gameObject);
+                crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color - new Color(0,weapon.dmg*0.1f,weapon.dmg*0.1f);
+                crosshair.GetComponent<Image>().color = new Color(1, crosshair.GetComponent<Image>().color.g>0? crosshair.GetComponent<Image>().color.g:0, crosshair.GetComponent<Image>().color.b > 0 ? crosshair.GetComponent<Image>().color.b : 0);
+                
+            }
+            else 
+            {
+                GameObject ob = Instantiate(weapon.bulletmark, hit.point, slot1.transform.GetChild(0).transform.rotation);
+                ob.transform.Rotate(-90,0,0);
+                Destroy(ob,3f);
+            }
+        }
+    }
     private void AddPlayer(player player,int ix) {
        GameObject ui = Instantiate(UIPlayerPrefab, UIPlayersbase.transform.position, UIPlayersbase.transform.rotation, UIPlayersbase.transform);
         ui.name = player.netId.ToString();
@@ -192,7 +234,7 @@ public class player : NetworkBehaviour
         {
             ui.transform.Find("HPbar").GetComponent<Slider>().value = player.hp * 0.01f;
             ui.transform.Find("Name").GetComponent<Text>().text = player.nickname;
-            ui.GetComponent<Image>().sprite = classes[player.characterclass].icon;
+            if(player.characterclass!=-1)ui.GetComponent<Image>().sprite = classes[player.characterclass].icon;
         }
     }
     private void UpdateResources() {
@@ -202,7 +244,7 @@ public class player : NetworkBehaviour
             UIInventory.transform.GetChild(i).gameObject.SetActive(resourcesCount[i] > 0);
             if (resourcesCount[i] > 0)
             {
-                UIInventory.transform.GetChild(i).GetChild(1).GetComponent<Text>().text = resourcesCount[i].ToString();
+                UIInventory.transform.GetChild(i).GetChild(3).GetComponent<Text>().text = resourcesCount[i].ToString();
                 ++activecount;
             }
         }
@@ -259,11 +301,13 @@ public class player : NetworkBehaviour
             UIshld = UIobject.transform.Find("ShieldImage").transform.Find("ShieldText").GetComponent<Text>();
             shldbar = UIobject.transform.Find("ShieldImage").transform.Find("ShieldBorder").GetComponent<Slider>();
             flarebar = UIobject.transform.Find("Flare").GetComponent<Slider>();
+            grenadebar = UIobject.transform.Find("Grenade").GetComponent<Slider>();
             classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
             shieldpic = UIobject.transform.Find("Shield").GetComponent<Image>();
             classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
             UIInventory = UIobject.transform.Find("Inventory").gameObject;
             UIRevive = UIobject.transform.Find("Revive").gameObject;
+            crosshair = UIobject.transform.Find("AIM").gameObject;
     }
 
     // Update is called once per frame
@@ -284,6 +328,11 @@ public class player : NetworkBehaviour
                 {
                     flarecooldown -= Time.deltaTime;
                     flarebar.value = 1f-flarecooldown*0.25f;
+                }
+                if (grenadecooldown > 0)
+                {
+                    grenadecooldown -= Time.deltaTime;
+                    grenadebar.value = 1f-grenadecooldown*0.25f;
                 }
                 if (containercooldown > 0)
                 {
@@ -367,16 +416,40 @@ public class player : NetworkBehaviour
                 {
                     CmdIsDrop(false);
                 }
-                if (Input.GetKeyDown(KeyCode.Space)&&canJump) { rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); }
+
+                //инвентарь
+                if (Input.GetKeyDown(KeyCode.Q)) {
+                    CmdSetSlot(currentslot==0?1:0);
+                }
+                if (Input.GetKeyDown(KeyCode.Alpha1)) {
+                    CmdSetSlot(1);
+                }
+                if (Input.GetKeyDown(KeyCode.Alpha0)) {
+                    CmdSetSlot(0);
+                }
+
+                //прыжки
+                if (Input.GetKeyDown(KeyCode.Space)&&canJump) {
+                    if (canUpJump) { rb.velocity = new Vector3(rb.velocity.x,0,rb.velocity.z); }
+                    rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); 
+                }
                 sprint = 1f;
                 if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.25f;}
                 if (Input.GetKey(KeyCode.Mouse0))
                 {
                     if (attackcooldown <= 0)
                     {
-                        animator.SetBool("Attack", true);
-                        attackcooldown = 1f;
-                        Attack();
+                        if (currentslot == 0)
+                        {
+                            animator.SetBool("Attack", true);
+                            attackcooldown = 1f;
+                            Attack();
+                        }
+                        else
+                        {
+                            attackcooldown = 1f / weapon.firerate;
+                            Fire();
+                        }
                     }
 
                 }
@@ -388,6 +461,14 @@ public class player : NetworkBehaviour
                         CmdSpawnFlare();
                     }
                 }
+                if (Input.GetKeyDown(KeyCode.G))
+                {
+                    if (grenadecooldown <= 0)
+                    {
+                        grenadecooldown = 2f;
+                        CmdSpawnGrenade();
+                    }
+                }
                 if (Input.GetKeyDown(KeyCode.C))
                 {
                     Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
@@ -397,6 +478,10 @@ public class player : NetworkBehaviour
                     }
                 }
 
+                //доводка оружия и красивости
+                slot1.transform.Rotate(mousedelta.y * Time.deltaTime * 15, -mousedelta.x * Time.deltaTime*15, -mousedelta.y * Time.deltaTime * 15+mousedelta.x*Time.deltaTime*15);
+                slot1.transform.rotation = Quaternion.Slerp(slot1.transform.rotation, rotator.transform.rotation,3f*Time.deltaTime);
+                if (crosshair.GetComponent<Image>().color.b < 1f) { crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color + new Color(0, Time.deltaTime*3, Time.deltaTime * 3); }
 
                 //взаимодействие
                 seeInteraction = false;
@@ -515,17 +600,34 @@ public class player : NetworkBehaviour
             if (shieldpic.color.a > 0) { shieldpic.color = new Color(1, 1, 1, shieldpic.color.a-0.15f*Time.deltaTime); }
             if (shieldpic.color.a < 0) { shieldpic.color = new Color(1, 1, 1, 0); }
         }
+
+        if (localslot != currentslot) {
+            localslot = currentslot;
+            if (localslot == 1) {
+                slot1.transform.Rotate(60,-60,-60);
+            }
+            slot1.SetActive(localslot==1);
+            slot10.SetActive(localslot==0);
+            crosshair.SetActive(localslot==1);
+        }
+
         if (localhp != hp) {
             
             localhp = hp;
             if (!isLocalPlayer) { hpobject.text = nickname + "\n" + hp; } else { UIhp.text = hp.ToString(); hpbar.value = hp*0.01f; }
         }
         canJump = false;
+        canUpJump = false;
+        
         if (Physics.Raycast(transform.position, -transform.up, out hit, 1.5f)) {
             if (isLocalPlayer) { canJump = true; }
             if (isServer && hit.collider.transform.CompareTag("Chunk")) {
                 thissmell.transform.position = transform.position;//hit.point;
             }
+        }
+        if (Physics.Raycast(head.transform.position+transform.forward*2+new Vector3(0,0.1f,0), -Vector3.up, out hit, 1f)) {
+            Debug.DrawRay(hit.point, Vector3.up, Color.cyan);
+            if (isLocalPlayer) { canJump = true;canUpJump = true; }
         }
         
         if (generator.platformstatus==1||generator.platformstatus==3) { if (isLocalPlayer&&!isClear) { Clear(); } transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
