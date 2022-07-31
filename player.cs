@@ -80,6 +80,9 @@ public class player : NetworkBehaviour
     private int updatetimer;
     private int localclass=-1;
 
+    //урон жукам
+    public bug.SyncListDamageInfo damageinfos = new bug.SyncListDamageInfo();
+
     
     private GameObject[] allitems;
     [SyncVar]
@@ -198,24 +201,35 @@ public class player : NetworkBehaviour
                 CmdSpawnDestroyer(hit.point);
             }
     }
+    [Command]
+    public void CmdAddInfo(NetworkInstanceId netid,int dmg) {
+        damageinfos.Add(new bug.damageinfo(netid,Random.Range(int.MinValue,int.MaxValue),Time.realtimeSinceStartup,dmg));
+    }
     public void Fire() {
         head.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*2, 0, 0);
         transform.Rotate(0, Random.Range(-weapon.recoil, weapon.recoil)*2, 0);
         slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
+        slot1.transform.Translate(Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range( -weapon.recoil, weapon.recoil)*0.1f, Random.Range(-weapon.recoil, -weapon.recoil*0.4f) * 0.2f);
         Audio.PlayOneShot(weapon.sound);
         Destroy(Instantiate(weapon.firesplash, slot1.transform.GetChild(0).transform.position, slot1.transform.GetChild(0).transform.rotation,slot1.transform),0.4f);
         if (Physics.Raycast(head.transform.position, head.transform.forward, out hit, 50)) {
             if (hit.transform.gameObject.CompareTag("Bug"))
             {
+                //hit.transform.GetComponent<bug>().Dmg(weapon.dmg, hit.collider.gameObject);
                 hit.transform.GetComponent<bug>().Dmg(weapon.dmg, hit.collider.gameObject);
+                CmdAddInfo(hit.transform.GetComponent<NetworkIdentity>().netId,weapon.dmg);
                 crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color - new Color(0,weapon.dmg*0.1f,weapon.dmg*0.1f);
                 crosshair.GetComponent<Image>().color = new Color(1, crosshair.GetComponent<Image>().color.g>0? crosshair.GetComponent<Image>().color.g:0, crosshair.GetComponent<Image>().color.b > 0 ? crosshair.GetComponent<Image>().color.b : 0);
                 
             }
-            else 
+            
             {
                 GameObject ob = Instantiate(weapon.bulletmark, hit.point, slot1.transform.GetChild(0).transform.rotation);
+                ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(0, slot1.transform.GetChild(0).transform.position);
+                ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(1, ob.transform.position);
                 ob.transform.Rotate(-90,0,0);
+                ob.transform.parent = hit.collider.transform;
+                Destroy(ob.transform.GetChild(0).gameObject,0.5f);
                 Destroy(ob,3f);
             }
         }
@@ -281,8 +295,9 @@ public class player : NetworkBehaviour
             AddPlayer(this, players.Count);
             players.Add(this);
         }
-        if (isServer) {
-            thissmell= Instantiate(smell, transform.position, transform.rotation);
+        if (isServer)
+        {
+            thissmell = Instantiate(smell, transform.position, transform.rotation);
         }
     }
     void TrueStart()
@@ -431,7 +446,8 @@ public class player : NetworkBehaviour
                 //прыжки
                 if (Input.GetKeyDown(KeyCode.Space)&&canJump) {
                     if (canUpJump) { rb.velocity = new Vector3(rb.velocity.x,0,rb.velocity.z); }
-                    rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse); 
+                    rb.AddRelativeForce(0, 450f, 0, ForceMode.Impulse);
+                    if (currentslot == 1) { slot1.transform.Rotate(15,0,0); }
                 }
                 sprint = 1f;
                 if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.25f;}
@@ -481,7 +497,15 @@ public class player : NetworkBehaviour
                 //доводка оружия и красивости
                 slot1.transform.Rotate(mousedelta.y * Time.deltaTime * 15, -mousedelta.x * Time.deltaTime*15, -mousedelta.y * Time.deltaTime * 15+mousedelta.x*Time.deltaTime*15);
                 slot1.transform.rotation = Quaternion.Slerp(slot1.transform.rotation, rotator.transform.rotation,3f*Time.deltaTime);
+                slot1.transform.position = Vector3.Slerp(slot1.transform.position, rotator.transform.position, 3f * Time.deltaTime);
                 if (crosshair.GetComponent<Image>().color.b < 1f) { crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color + new Color(0, Time.deltaTime*3, Time.deltaTime * 3); }
+
+                //удаление
+                
+                for (int i = 0; i < damageinfos.Count; ++i) 
+                {
+                    if (damageinfos[i].lifetime+3f < Time.realtimeSinceStartup) { damageinfos.Remove(damageinfos[i]); }
+                }/**/
 
                 //взаимодействие
                 seeInteraction = false;
@@ -600,15 +624,25 @@ public class player : NetworkBehaviour
             if (shieldpic.color.a > 0) { shieldpic.color = new Color(1, 1, 1, shieldpic.color.a-0.15f*Time.deltaTime); }
             if (shieldpic.color.a < 0) { shieldpic.color = new Color(1, 1, 1, 0); }
         }
-
-        if (localslot != currentslot) {
-            localslot = currentslot;
-            if (localslot == 1) {
-                slot1.transform.Rotate(60,-60,-60);
+        if (isServer) {
+            for (int i = 0; i < damageinfos.Count; ++i) 
+            {
+                print(damageinfos[i].netid + ":" + damageinfos[i].lifetime);
             }
-            slot1.SetActive(localslot==1);
-            slot10.SetActive(localslot==0);
-            crosshair.SetActive(localslot==1);
+        }
+        if (localslot != currentslot)
+        {
+            localslot = currentslot;
+            slot1.SetActive(localslot == 1);
+            slot10.SetActive(localslot == 0);
+            if (isLocalPlayer)
+            {
+                if (localslot == 1)
+                {
+                    slot1.transform.Rotate(60, -60, -60);
+                }
+                crosshair.SetActive(localslot == 1);
+            }
         }
 
         if (localhp != hp) {
@@ -682,7 +716,8 @@ public class player : NetworkBehaviour
         {
             if (isLocalPlayer)
             {
-                int dmg = int.Parse(other.gameObject.name);
+                int dmg = 15;
+                //int dmg = int.Parse(other.gameObject.name);
                 Dmg(dmg);
             }
             Destroy(other.gameObject);

@@ -7,6 +7,7 @@ using UnityEngine.Networking;
 public class bug : NetworkBehaviour
 {
     public Generator generator;
+    [SyncVar]
     public state State;
     public bool isStartWalking;
     public float speed = 3.5f;
@@ -16,49 +17,67 @@ public class bug : NetworkBehaviour
     private int currentpoint;
     public Transform rotator;
 
-    public GameObject attacksphere, hitsphere;
+    public GameObject attacksphere, hitsphere, donthitsphere;
 
     public Slider hpbar;
     public GameObject back;//спина
-    public GameObject jaw_up,jaw_down;//челюсти
-    public GameObject leg_fr, leg_fl, leg_br, leg_bl, leg_cr, leg_cl,hand_l,hand_r;//ляжки
-    public GameObject foot_fr, foot_fl, foot_br, foot_bl, foot_cr, foot_cl,arm_l,arm_r;//голени
-    public GameObject point_fr, point_fl, point_br, point_bl, point_cr, point_cl,point_ar,point_al;//точки сброса
+    public GameObject jaw_up, jaw_down;//челюсти
+    public GameObject leg_fr, leg_fl, leg_br, leg_bl, leg_cr, leg_cl, hand_l, hand_r;//ляжки
+    public GameObject foot_fr, foot_fl, foot_br, foot_bl, foot_cr, foot_cl, arm_l, arm_r;//голени
+    public GameObject point_fr, point_fl, point_br, point_bl, point_cr, point_cl, point_ar, point_al;//точки сброса
     public GameObject defpoint_r, defpoint_l;//точки защиты
-    public Vector3 v_bl, v_br, v_fl, v_fr, v_cr, v_cl,v_al,v_ar;
-    public Vector3 t_bl, t_br, t_fl, t_fr, t_cr, t_cl,t_al,t_ar;
-    public Vector3 s_bl, s_br, s_fl, s_fr, s_cr, s_cl,s_al,s_ar;
-    private bool lock_bl, lock_br, lock_fl, lock_fr, lock_cl, lock_cr,lock_ar,lock_al;
+    public Vector3 v_bl, v_br, v_fl, v_fr, v_cr, v_cl, v_al, v_ar;
+    public Vector3 t_bl, t_br, t_fl, t_fr, t_cr, t_cl, t_al, t_ar;
+    public Vector3 s_bl, s_br, s_fl, s_fr, s_cr, s_cl, s_al, s_ar;
+    private bool lock_bl, lock_br, lock_fl, lock_fr, lock_cl, lock_cr, lock_ar, lock_al;
     private float bfr;
     private RaycastHit hit;
     private float spd;
     private Vector3 middlepoint;
     private float dropHeight = 4, stepTrashold = 1f;
-    public float attacktimer,visiontimer;
+    public float attacktimer, visiontimer;
     public int updatetimer;
     private bool isAttack;
     private GameObject target;
     public int maxhp = 100;
     private int localhp = 100;
+
+    private HashSet<int> infos;
     [SyncVar]
     public int hp = 100;
     [Command]
     private void CmdAttack(int dmg) {
         GameObject ob = Instantiate(attacksphere, defpoint_l.transform.position, transform.rotation);
-        ob.transform.Translate(1f,0,0);
+        ob.transform.Translate(1f, 0, 0);
         ob.name = "" + dmg;
-        Destroy(ob, 3f);
+        Destroy(ob, 0.1f);
         NetworkServer.Spawn(ob);
     }
     [Command]
     private void CmdDmg(int dmg) {
         hp -= dmg;
     }
-    public void Dmg(int dmg, GameObject collider) {
-        Destroy(Instantiate(hitsphere, collider.transform.position, transform.rotation), 1f);
-        transform.Rotate(0.6f * Random.Range(-1f*dmg, 1f * dmg), 0.6f * Random.Range(-1f * dmg, 1f * dmg), 0.6f*Random.Range(-1f * dmg, 1f * dmg));
-        transform.Translate(0.03f * Random.Range(-1f*dmg, 1f * dmg), 0, 0.03f*Random.Range(-1f * dmg, 1f * dmg));
-        CmdDmg(dmg);
+    public void Dmg(int dmg, GameObject collider)
+    {
+        if (collider == arm_l || collider == arm_r)
+        {
+            dmg /= 2;
+            Destroy(Instantiate(donthitsphere, collider.transform.position, transform.rotation), 1f);
+        }
+        else
+        {
+            Destroy(Instantiate(hitsphere, collider.transform.position, transform.rotation), 1f);
+        }
+        transform.Rotate(0.4f * Random.Range(-1f * dmg, 1f * dmg), 0.4f * Random.Range(-1f * dmg, 1f * dmg), 0.4f * Random.Range(-1f * dmg, 1f * dmg));
+        transform.Translate(0.01f * Random.Range(-1f * dmg, 1f * dmg), 0, 0.01f * Random.Range(-1f * dmg, 1f * dmg));
+    //    if(isServer)CmdDmg(dmg);
+    }
+    private int publicdmg;
+    private GameObject publiccollider;
+    public void PublicDmg(int dmg, GameObject collider) {
+        publicdmg = dmg;
+        publiccollider = collider;
+        Dmg(dmg, collider);
     }
     private void DropAll()
     {
@@ -137,6 +156,10 @@ public class bug : NetworkBehaviour
         generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
         hp = maxhp;
         localhp = maxhp;
+        if (isServer) 
+        {
+            infos = new HashSet<int>();
+        }
     }
     void Update()
     {
@@ -152,7 +175,8 @@ public class bug : NetworkBehaviour
                 {
                     ++currentpoint;
                 }
-                if (Vector3.Distance(target.transform.position, transform.position) < 3) {
+                if (Vector3.Distance(target.transform.position, transform.position) < 3)
+                {
                     isStartWalking = false;
                 }
             }
@@ -162,18 +186,18 @@ public class bug : NetworkBehaviour
                 {
                     if (!target)
                     {
-                        if (visiontimer <= 0&&GameObject.FindGameObjectsWithTag("Smell").Length>0)
+                        if (visiontimer <= 0 && GameObject.FindGameObjectsWithTag("Smell").Length > 0)
                         {
                             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Smell").Length; ++i)
                             {
-                                if (Random.Range(0,3)==0&&Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Smell")[i].transform.position) < 40f)
+                                if (Random.Range(0, 3) == 0 && Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Smell")[i].transform.position) < 40f)
                                 {
                                     target = GameObject.FindGameObjectsWithTag("Smell")[i];
                                     visiontimer = 30f;
                                     break;
                                 }
                             }
-                            if(false)// (!target)
+                            if (false)// (!target)
                             {
                                 for (int i = 0; i < GameObject.FindGameObjectsWithTag("Player").Length; ++i)
                                 {
@@ -186,23 +210,25 @@ public class bug : NetworkBehaviour
                                 }
                             }
                         }
-                        else 
+                        else
                         {
                             State = state.none;
                         }
                     }
-                    else {
+                    else
+                    {
                         if (Vector3.Distance(transform.position, target.transform.position) > 3f)
                         {
                             if (updatetimer == 0)
                             {
                                 try
                                 {
-                                    SetPath(generator.GetPath(transform.position, target.transform.position+new Vector3(Random.Range(-2f,2f),0, Random.Range(-2f, 2f))));
-                                    path.Add(path[path.Count-1]+new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f)));
-                                    for (int i = 0; i < path.Count; ++i) { 
-                                        path[i]+= new Vector3(Random.Range(-0.5f, 0.5f), 0, Random.Range(-0.5f, 0.5f));
-                                }
+                                    SetPath(generator.GetPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    path.Add(path[path.Count - 1] + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f)));
+                                    for (int i = 0; i < path.Count; ++i)
+                                    {
+                                        path[i] += new Vector3(Random.Range(-0.5f, 0.5f), 0, Random.Range(-0.5f, 0.5f));
+                                    }
                                 }
                                 catch { updatetimer = 1000 + Random.Range(-100, 100); }
                                 if (Random.Range(0, 4) != 0)
@@ -214,7 +240,8 @@ public class bug : NetworkBehaviour
                                     State = state.defense;
                                 }
                             }
-                            else {
+                            else
+                            {
                                 --updatetimer;
                             }
                         }
@@ -236,16 +263,47 @@ public class bug : NetworkBehaviour
                 }
                 else
                 {
-                    if(target)rotator.LookAt(target.transform);
+                    if (target) rotator.LookAt(target.transform);
                     attacktimer -= Time.deltaTime;
-                    if (attacktimer <= 0) {
+                    if (attacktimer <= 0)
+                    {
                         //CmdAttack(State == state.bite ? 15 : 10);
                     }
-                    
+
                     visiontimer -= Time.deltaTime;
                     if (visiontimer <= 0) { target = null; }
                 }
             }
+            
+            if(player.players!=null)for (int i = 0; i < player.players.Count; ++i) 
+            {
+                for (int ii = 0; ii < player.players[i].damageinfos.Count; ++ii) 
+                {
+                        if (player.players[i].damageinfos[ii].netid == netId)
+                        {
+                            if (!infos.Contains(player.players[i].damageinfos[ii].unid))
+                            {
+                                infos.Add(player.players[i].damageinfos[ii].unid);
+                                CmdDmg(player.players[i].damageinfos[ii].dmgamout);
+                            }
+                        }
+                }
+            }
+            player plr=null;
+            if (GameObject.FindGameObjectWithTag("Player")) { plr = GameObject.FindGameObjectWithTag("Player").GetComponent<player>(); }
+
+            if (plr)for (int ii = 0; ii < plr.damageinfos.Count; ++ii)
+            {
+                if (plr.damageinfos[ii].netid == netId)
+                {
+                    if (!infos.Contains(plr.damageinfos[ii].unid))
+                    {
+                        infos.Add(plr.damageinfos[ii].unid);
+                        CmdDmg(plr.damageinfos[ii].dmgamout);
+                    }
+                }
+            }
+            /**/
         }
 
         if (State==state.bite&&attacktimer < 0.6f) {
@@ -259,7 +317,7 @@ public class bug : NetworkBehaviour
             {
                 if (attacktimer < 0.2f)
                 {
-                    if (!isAttack) { isAttack = true; CmdAttack(15); }
+                    if (!isAttack) { isAttack = true; if (isServer) { CmdAttack(15); } }
                     back.transform.Translate(0, Time.deltaTime * -3.6f, 0);
                     //jaw_up.transform.Rotate(Time.deltaTime * 100, 0, 0);
                     //jaw_down.transform.Rotate(Time.deltaTime * -100, 0, 0);
@@ -429,7 +487,9 @@ public class bug : NetworkBehaviour
                     }
                     else if (attacktimer < 0.7f)
                     {
-                        if (!isAttack) { isAttack = true; CmdAttack(10); }
+                        if (!isAttack) { isAttack = true;
+                            if (isServer) { CmdAttack(10); }
+                        }
                         if (target)
                         {
                             t_ar = target.transform.position;
@@ -469,6 +529,7 @@ public class bug : NetworkBehaviour
         {
             if (collision.gameObject.CompareTag("Destroyer")) {
                 Dmg(15,collision.other.gameObject);
+                CmdDmg(15);
             }
         }
         if (collision.gameObject.CompareTag("Destroyer"))
@@ -483,4 +544,20 @@ public class bug : NetworkBehaviour
         bite,
         slash
     }
+    
+    public struct damageinfo {
+        public NetworkInstanceId netid;
+        public int unid;
+        public float lifetime;
+        public int dmgamout;
+        public damageinfo(NetworkInstanceId netid,int unid, float lifetime, int dmgamout)
+        {
+            this.netid = netid;
+            this.unid = unid;
+            this.lifetime = lifetime;
+            this.dmgamout = dmgamout;
+        }
+    }
+    public class SyncListDamageInfo:SyncListStruct<damageinfo> { }
+    /**/
 }

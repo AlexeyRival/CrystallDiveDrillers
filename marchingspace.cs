@@ -261,8 +261,10 @@ public class marchingspace : MonoBehaviour
                         if (x == 0 || x == sizeX - 1)
                         {
                             for (i = 0; i < neighbors.Count; ++i) {
-                                if (!friends.Contains(neighbors[i])) {
-                                    if (neighbors[i].space[sizeX - 1 - x, y, z]) {
+                                if (!friends.Contains(neighbors[i]))
+                                {
+                                    if (neighbors[i].space[sizeX - 1 - x, y, z])
+                                    {
                                         friends.Add(neighbors[i]);
                                         neighbors[i].friends.Add(this);
                                         break;
@@ -309,9 +311,8 @@ public class marchingspace : MonoBehaviour
                             {
                                 if (!walkpoints.ContainsKey(calculatedvector))
                                 {
-                                    //   walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,borders>0));
                                     walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,true));
-                                    if (x < 3 || x > sizeX - 4 || y < 3 || y > sizeY - 4 || z < 3 || z > sizeZ - 4) {
+                                    if (x < 2 || x > sizeX - 3 || y < 2 || y > sizeY - 3 || z < 2 || z > sizeZ - 3) {
                                     borderpoints.Add(calculatedvector, 0);
                                     }
                                 }
@@ -418,8 +419,9 @@ public class marchingspace : MonoBehaviour
                             if (friends[i].walkpoints[point.Key + neighborsTable[ii]].weight == 0)
                             {
                                 friends[i].walkpoints[point.Key + neighborsTable[ii]].weight = walkpoints[point.Key].weight + 1;
+                                Debug.DrawRay(point.Key, neighborsTable[ii] * step, new Color(0.77f, 0.34f, 0.44f, 0.34f), 10f);
+                                break;
                             }
-                            Debug.DrawRay(point.Key, neighborsTable[ii] * step, new Color(0.77f, 0.34f, 0.44f, 0.34f), 10f);
                         }
                     }
                 }
@@ -584,7 +586,6 @@ public class marchingspace : MonoBehaviour
         new Vector3(0,-1,0),
         new Vector3(0,-1,1),
         new Vector3(0,0,-1),
-        new Vector3(0,0,0),
         new Vector3(0,0,1),
         new Vector3(0,1,-1),
         new Vector3(0,1,0),

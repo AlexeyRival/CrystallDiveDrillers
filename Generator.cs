@@ -107,6 +107,15 @@ public class Generator : NetworkBehaviour
         bufferpath.RemoveAt(0);
         return bufferpath;
     }
+    public List<Vector3> GetFastPath(Vector3 start, Vector3 end)
+    {
+        pathendpoint = start;
+        pathstartpoint = end;
+        List<Vector3> bufferpath = CalculateFastPath();
+        bufferpath.RemoveAt(0);
+        bufferpath.Add(start);
+        return bufferpath;
+    }
     [Command]
     public void CmdAddResource(int id, int amout) {
         resourcesCount[id] += amout;
@@ -314,34 +323,93 @@ public class Generator : NetworkBehaviour
         }
         return outpath;
     }
+    public List<Vector3> CalculateFastPath()
+    {
+        List<Vector3> outpath = new List<Vector3>();
+
+        marchingspace endchunk = manager.marchingspaces[0];
+        Vector3 thispathendpoint = pathendpoint;
+        bool grandbreak = false;
+        Dictionary<string, bool> isCalculated = new Dictionary<string, bool>();
+        Vector3 resault = new Vector3(-1, -1, -1);
+        for (int i = 0; i < manager.marchingspaces.Length; ++i)
+        {
+            manager.marchingspaces[i].ClearWeights();
+        }
+        for (int i = 0; i < manager.marchingspaces.Length; ++i)
+        {
+            foreach (var point in manager.marchingspaces[i].walkpoints)
+            {
+                //if (Vector3.Distance(point.Key, pathendpoint)<2) {
+                if (FastDist(point.Key, pathendpoint, 4))
+                {
+                    isCalculated[manager.marchingspaces[i].name] = true;
+                    point.Value.weight = 1;
+                    resault = manager.marchingspaces[i].CalculateWeights(pathstartpoint);
+                    thispathendpoint = point.Key;
+                    endchunk = manager.marchingspaces[i];
+                    grandbreak = true;
+                    Debug.DrawLine(point.Key, pathendpoint, new Color(0.6f, 0.2f, 0), 10f);
+                    break;
+                }
+            }
+            if (grandbreak) { break; }
+        }
+        int updatedchunks = 0, previosupdated = -1;
+        grandbreak = false;
+        if (resault == new Vector3(-1, -1, -1)) for (int k = 0; k < sizeX * 10; ++k)
+            {//должно хватить
+                updatedchunks = 0;
+                for (int i = 0; i < manager.marchingspaces.Length; ++i) if (isCalculated.ContainsKey(manager.marchingspaces[i].name)&&isCalculated[manager.marchingspaces[i].name])
+                    {
+                        for (int ii = 0; ii < manager.marchingspaces[i].friends.Count; ++ii) if (!isCalculated.ContainsKey(manager.marchingspaces[i].friends[ii].name))
+                            {
+                                isCalculated[manager.marchingspaces[i].friends[ii].name] = true;
+                                resault = manager.marchingspaces[i].friends[ii].CalculateWeights(pathstartpoint);
+                                ++updatedchunks;
+                                if (resault != new Vector3(-1, -1, -1))
+                                {
+                                    endchunk = manager.marchingspaces[i].friends[ii];
+                                    grandbreak = true; break;
+                                }
+                            }
+                        if (grandbreak) { break; }
+                        isCalculated[manager.marchingspaces[i].name] = false;
+                    }
+                if (previosupdated == updatedchunks || grandbreak) { break; }
+                previosupdated = updatedchunks;
+            }
+        outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
+        return outpath;
+    }
     public List<Vector3> CalculatePoint(marchingspace ms,walkpoint point, Vector3 target)
     {
+        int _i, _ii;
         List<Vector3> outlist = new List<Vector3>();
         //if (FastDist(point.position,target,4)) {
         if (point.position == target) {
             outlist.Add(point.position);
             return outlist;
         }
-        for (int i = 0; i < point.friends.Count; ++i)
+        for (_i = 0; _i < point.friends.Count; ++_i)
         {
-            if(ms.walkpoints.ContainsKey(point.friends[i]))if (ms.walkpoints[point.friends[i]].weight < point.weight)
+            if(ms.walkpoints.ContainsKey(point.friends[_i]))if (ms.walkpoints[point.friends[_i]].weight < point.weight)
             {
-                outlist = CalculatePoint(ms, ms.walkpoints[point.friends[i]], target);
+                outlist = CalculatePoint(ms, ms.walkpoints[point.friends[_i]], target);
                 if (outlist.Count != 0) {
                     outlist.Add(point.position);
                     return outlist;
                 }
             }
         }
-
-            for (int i = 0; i < ms.friends.Count; ++i) {
-            for (int ii = 0; ii < marchingspace.neighborsTable.Length; ++ii)
+            for (_i = 0; _i < ms.friends.Count; ++_i) {
+            for (_ii = 0; _ii < marchingspace.neighborsTable.Length; ++_ii)
             {
-                if (ms.friends[i].walkpoints.ContainsKey(point.position + marchingspace.neighborsTable[ii]))
+                if (ms.friends[_i].walkpoints.ContainsKey(point.position + marchingspace.neighborsTable[_ii]))
                 {
-                    if (ms.friends[i].walkpoints[point.position + marchingspace.neighborsTable[ii]].weight < point.weight)
+                    if (ms.friends[_i].walkpoints[point.position + marchingspace.neighborsTable[_ii]].weight < point.weight)
                     {
-                        outlist = CalculatePoint(ms.friends[i], ms.friends[i].walkpoints[point.position + marchingspace.neighborsTable[ii]], target);
+                        outlist = CalculatePoint(ms.friends[_i], ms.friends[_i].walkpoints[point.position + marchingspace.neighborsTable[_ii]], target);
                         if (outlist.Count != 0)
                         {
                             outlist.Add(point.position);
@@ -359,10 +427,22 @@ public class Generator : NetworkBehaviour
         public List<Vector3> friends;
         public float weight;
         public bool isBorder;
+        public List<pointneighbor> pointneighbors;
         public walkpoint(Vector3 position,bool isBorder) {
             this.position = position;
             friends = new List<Vector3>();
             this.isBorder = isBorder;
+            pointneighbors = new List<pointneighbor>();
+        }
+    }
+    public struct pointneighbor 
+    {
+        public int friendchunkid;
+        public Vector3 pointid;
+        public pointneighbor(int friendchunkid, Vector3 pointid)
+        {
+            this.friendchunkid = friendchunkid;
+            this.pointid = pointid;
         }
     }
 
