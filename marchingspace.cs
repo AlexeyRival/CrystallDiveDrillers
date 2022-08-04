@@ -22,6 +22,7 @@ public class marchingspace : MonoBehaviour
     public List<marchingspace> neighbors, friends;
     public Dictionary<Vector3, Generator.walkpoint> walkpoints;
     public Dictionary<Vector3, byte> borderpoints;
+    public Dictionary<Vector3Int, GameObject> spawneddecorations;
 
     void Start()
     {
@@ -29,6 +30,7 @@ public class marchingspace : MonoBehaviour
         neighbors = new List<marchingspace>();
         walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         borderpoints = new Dictionary<Vector3, byte>();
+        spawneddecorations = new Dictionary<Vector3Int, GameObject>();
         generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
         space = new bool[sizeX, sizeY, sizeZ];
         shift = new float[sizeX, sizeY, sizeZ];
@@ -169,18 +171,21 @@ public class marchingspace : MonoBehaviour
                         maxpoint = true;
                     }
 
+                    if (space[x, y, z] && Random.Range(0, 100) == 0) { generator.bugspawnpoints.Add(new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)); }
+
                     //пол
                     if (y > 0 && space[x, y, z] && !space[x, y - 1, z])
                     {
-                        if (sf > 0f)
-                        {
-                            Instantiate(grasses[Random.Range(0, grasses.Length)], new Vector3(x + transform.position.x + Random.Range(-0.125f, 0.125f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.125f, 0.125f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
-                        }
                         if (sf > 0.8f)
                         {
-                            Instantiate(flowers[Random.Range(0, flowers.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform);
+                            spawneddecorations.Add(new Vector3Int(x, y, z), Instantiate(flowers[Random.Range(0, flowers.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform));
                         } else if (((sf<0.8f&&sf>0.5f)|| (sf > -0.8f && sf < -0.5f))&& Random.Range(0, 7) == 0) { 
                             Instantiate(stalagmites[Random.Range(0, stalagmites.Length)], new Vector3(x + transform.position.x + Random.Range(-0.5f, 0.5f), y + transform.position.y-1f, z + transform.position.z + Random.Range(-0.5f, 0.5f)), Quaternion.Euler(180, Random.Range(0, 360), 0), transform);
+                        }
+                        else
+                        if (sf > 0f)
+                        {
+                            spawneddecorations.Add(new Vector3Int(x, y, z), Instantiate(grasses[Random.Range(0, grasses.Length)], new Vector3(x + transform.position.x + Random.Range(-0.125f, 0.125f), y + transform.position.y - 0.3f, z + transform.position.z + Random.Range(-0.125f, 0.125f)), Quaternion.Euler(0, Random.Range(0, 360), 0), transform));
                         }
                     }
                     //потолок
@@ -538,15 +543,23 @@ public class marchingspace : MonoBehaviour
                     if (maxy > sizeY) maxy = sizeY;
                     if (minz < 0) minz = 0;
                     if (maxz > sizeZ) maxz = sizeZ;
-                    for (int x = minx; x < maxx; ++x)
-                        for (int y = miny; y < maxy; ++y)
-                            for (int z = minz; z < maxz; ++z) if (!space[x, y, z])
-                                {
+            for (int x = minx; x < maxx; ++x)
+                for (int y = miny; y < maxy; ++y)
+                    for (int z = minz; z < maxz; ++z) if (!space[x, y, z])
+                        {
                             //        if (Vector3.Distance(vec, new Vector3(x, y+shift[x,y,z], z) + transform.position) < scale) {
-                                    if (Generator.FastDist(vec, new Vector3(x, y+shift[x,y,z], z) + transform.position, scale*scale)) {
-                                space[x, y, z] = true; isChanged = true; 
+                            if (Generator.FastDist(vec, new Vector3(x, y + shift[x, y, z], z) + transform.position, scale * scale))
+                            {
+                                space[x, y, z] = true; isChanged = true;
                             }
-                                }
+                        }
+                        else
+                        {
+                            if (Generator.FastDist(vec, new Vector3(x, y + shift[x, y, z], z) + transform.position, scale * scale))
+                            {
+                                if (spawneddecorations.ContainsKey(new Vector3Int(x, y, z))) {  Destroy(spawneddecorations[new Vector3Int(x, y, z)]); spawneddecorations.Remove(new Vector3Int(x, y, z)); }
+                            }
+                        }
                 }
                 catch
                 {

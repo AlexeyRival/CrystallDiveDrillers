@@ -12,6 +12,8 @@ public class player : NetworkBehaviour
     public AudioSource Audio;
     public float speed = 75f;
     private float sprint=1f;
+    private float acceleration;
+    private bool ismoving;
     private bool canJump;
     private bool canUpJump;
     public GameObject sphereDestroyer,flare,grenade;
@@ -66,19 +68,24 @@ public class player : NetworkBehaviour
     public GameObject UIobject,UIInventory,UIRevive, crosshair;
     public Text UIhp,UIshld;
     public Slider hpbar, shldbar, flarebar,grenadebar;
-    public Image classpic;
+    public Image classpic,UIBlackScreen;
     public GameObject expscreen;
+    private bool isFade;
 
     //уровни и опыт
     public static int level;
     public static int xp;
     public static int dwarfclass=-1;
+    [SyncVar]
+    public int kills=0;
 
     //другие игроки
     public GameObject UIPlayerPrefab,UIPlayersbase;
     public static List<player> players;
+    public static player thisplayer;
     private int updatetimer;
     private int localclass=-1;
+    
 
     //урон жукам
     public bug.SyncListDamageInfo damageinfos = new bug.SyncListDamageInfo();
@@ -125,6 +132,7 @@ public class player : NetworkBehaviour
     [Command]
     void CmdSpawnFlare() {
         GameObject ob= Instantiate(flare, head.transform.position, head.transform.rotation);
+        ob.transform.Translate(0, 0, 1);
         ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20,ForceMode.Impulse);
         Destroy(ob, 30f);
         NetworkServer.Spawn(ob);
@@ -132,6 +140,7 @@ public class player : NetworkBehaviour
     [Command]
     void CmdSpawnGrenade() {
         GameObject ob= Instantiate(grenade, head.transform.position, head.transform.rotation);
+        ob.transform.Translate(0,0,1);
         ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20,ForceMode.Impulse);
         Destroy(ob, 30f);
         NetworkServer.Spawn(ob);
@@ -142,6 +151,10 @@ public class player : NetworkBehaviour
         if(!isLocalPlayer)if (amout < 0) {
             generator.AddResource(id, -amout);
         }
+    }
+    [Command]
+    void CmdResetKills() {
+        kills = 0;
     }
     [Command]
     void CmdStartMission() {
@@ -295,6 +308,10 @@ public class player : NetworkBehaviour
             AddPlayer(this, players.Count);
             players.Add(this);
         }
+        else 
+        {
+            thisplayer = this;
+        }
         if (isServer)
         {
             thissmell = Instantiate(smell, transform.position, transform.rotation);
@@ -319,10 +336,19 @@ public class player : NetworkBehaviour
             grenadebar = UIobject.transform.Find("Grenade").GetComponent<Slider>();
             classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
             shieldpic = UIobject.transform.Find("Shield").GetComponent<Image>();
+            UIBlackScreen = GameObject.Find("Canvas").transform.Find("Blackscreen").GetComponent<Image>();
             classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
             UIInventory = UIobject.transform.Find("Inventory").gameObject;
             UIRevive = UIobject.transform.Find("Revive").gameObject;
             crosshair = UIobject.transform.Find("AIM").gameObject;
+    }
+    private void OnDestroy()
+    {
+        if (isLocalPlayer) {
+            print("отключилось");
+            //TODO интерфейс отключения
+            //Application.LoadLevel(0);
+        }
     }
 
     // Update is called once per frame
@@ -359,32 +385,39 @@ public class player : NetworkBehaviour
                 transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
                 head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
                 timerforcam += Time.deltaTime;
+                ismoving = false;
                 if (Input.GetKey(KeyCode.W)) {
-                  //  moveVector.z = Time.deltaTime * 0.1f * speed * sprint;
-                        transform.Translate(0, 0, Time.deltaTime * 0.1f * speed*sprint);
+                    ismoving = true;
+                    moveVector = new Vector3(moveVector.x, moveVector.y, acceleration * speed * sprint);
                     head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f*sprint, Mathf.Cos(timerforcam*Mathf.PI * 4) *0.01f * sprint, 0);
                 }
                 if (Input.GetKey(KeyCode.A))
                 {
-                  //  moveVector.x = Time.deltaTime * -0.1f * speed * sprint;
-                    transform.Translate(Time.deltaTime * -0.1f * speed * sprint, 0, 0);
+                    ismoving = true;
+                    moveVector = new Vector3(-acceleration * speed * sprint, moveVector.y, moveVector.z);
                     head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f * sprint, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f * sprint, 0);
                 }
                 if (Input.GetKey(KeyCode.S))
                 {
-                  //  moveVector.z = Time.deltaTime * -0.1f * speed * sprint;
-                    transform.Translate(0, 0, Time.deltaTime * -0.1f * speed * sprint);
+                    ismoving = true;
+                    moveVector = new Vector3(moveVector.x, moveVector.y, -acceleration * speed * sprint);
                     head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f * sprint, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f * sprint, 0);
                 }
                 if (Input.GetKey(KeyCode.D))
                 {
-                 //   moveVector.x = Time.deltaTime*0.1f * speed * sprint;
-                    transform.Translate(Time.deltaTime * 0.1f * speed * sprint, 0, 0);
+                    ismoving = true;
+                    moveVector = new Vector3(acceleration * speed * sprint, moveVector.y, moveVector.z);
                     head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI*2) * 0.01f * sprint, Mathf.Cos(timerforcam * Mathf.PI * 4) * 0.01f * sprint, 0);
                 }
-               // moveVector = transform.TransformDirection(moveVector);
-               // if(moveVector!=new Vector3())rb.velocity = new Vector3(moveVector.x, rb.velocity.y, moveVector.z);
-               // moveVector = new Vector3();
+                if (ismoving)
+                {
+                    acceleration += Time.deltaTime;
+                    if (acceleration > 0.1f) { acceleration = 0.1f; }
+                }
+                else { acceleration = 0; }
+                moveVector = transform.TransformDirection(moveVector);
+                if(moveVector!=new Vector3())rb.velocity = new Vector3(moveVector.x, rb.velocity.y, moveVector.z);
+                moveVector = new Vector3();
                 if (Input.GetKey(KeyCode.E))
                 {
                     if (seeContainer && containercooldown <= 0)
@@ -401,7 +434,7 @@ public class player : NetworkBehaviour
                             }
                         }
                     }
-                    if (gobackinteraction)
+                    if (gobackinteraction&&isServer)
                     {
                         if (generator.platformstatus == 0)
                         {
@@ -450,7 +483,7 @@ public class player : NetworkBehaviour
                     if (currentslot == 1) { slot1.transform.Rotate(15,0,0); }
                 }
                 sprint = 1f;
-                if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.25f;}
+                if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.45f;}
                 if (Input.GetKey(KeyCode.Mouse0))
                 {
                     if (attackcooldown <= 0)
@@ -551,7 +584,7 @@ public class player : NetworkBehaviour
                 }
 
                 //  if (GameObject.Find("SphereDestroyer(Clone)")) { marchingspace.isChecking = true;  } else { marchingspace.isChecking = false; }
-                magnitude = rb.velocity.magnitude;
+                magnitude = rb.velocity.y;//rb.velocity.magnitude;
                 if (hp < 0)
                 {
                     isDead = true;
@@ -624,10 +657,27 @@ public class player : NetworkBehaviour
             if (shieldpic.color.a > 0) { shieldpic.color = new Color(1, 1, 1, shieldpic.color.a-0.15f*Time.deltaTime); }
             if (shieldpic.color.a < 0) { shieldpic.color = new Color(1, 1, 1, 0); }
         }
-        if (isServer) {
-            for (int i = 0; i < damageinfos.Count; ++i) 
+        if (isServer)
+        {
+            GameObject[] bugs = GameObject.FindGameObjectsWithTag("Bug");
+            for (int i = 0; i < damageinfos.Count; ++i)
             {
-                print(damageinfos[i].netid + ":" + damageinfos[i].lifetime);
+                if (damageinfos[i].lifetime + 1f < Time.realtimeSinceStartup) { damageinfos.Remove(damageinfos[i]);continue; }
+                for (int ii = 0; ii < bugs.Length; ++ii) {
+                    if (bugs[ii].GetComponent<NetworkIdentity>().netId == damageinfos[i].netid&& bugs[ii].GetComponent<bug>().hp<=0) {
+                        ++kills;
+                        damageinfos.Remove(damageinfos[i]);
+                        break;
+                    }
+                }
+            }
+        }
+        else 
+        {
+            //TODO следы от выстрелов. придумать!
+            for (int i = 0; i < damageinfos.Count; ++i)
+            {
+             
             }
         }
         if (localslot != currentslot)
@@ -664,8 +714,32 @@ public class player : NetworkBehaviour
             if (isLocalPlayer) { canJump = true;canUpJump = true; }
         }
         
-        if (generator.platformstatus==1||generator.platformstatus==3) { if (isLocalPlayer&&!isClear) { Clear(); } transform.parent = generator.platform.transform;if (!isTeleported) { transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f)); isTeleported = true; } }
-        if (generator.platformstatus==0||generator.platformstatus==2) { transform.parent = null;isTeleported = false;isClear = false;if (generator.isStart&&isLocalPlayer) { CmdSetProgress(generator.GetLoadingStatus()); } }
+        if (generator.platformstatus==1||generator.platformstatus==3) { 
+            if (isLocalPlayer&&!isClear) { 
+                Clear();
+                if (generator.platformstatus == 1) { CmdResetKills(); } 
+            }
+            if (generator.platformstatus == 1)
+            {
+                if (!isFade)
+                {
+                    UIBlackScreen.color = UIBlackScreen.color - new Color(0, 0, 0, Time.deltaTime * 0.125f);
+                    if (UIBlackScreen.color.a <= 0) { UIBlackScreen.gameObject.SetActive(false); isFade = true; UIBlackScreen.color = new Color(0, 0, 0, 1); }
+                }
+            }
+            else { if (isFade) { isFade = false; } }
+            transform.parent = generator.platform.transform;
+            if (!isTeleported) { 
+                transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f));
+                isTeleported = true;
+            } 
+        }
+        if (generator.platformstatus==0||generator.platformstatus==2) {
+            transform.parent = null;isTeleported = false;isClear = false;
+            if (generator.isStart&&isLocalPlayer) { 
+                CmdSetProgress(generator.GetLoadingStatus()); 
+            } 
+        }
         allitems = GameObject.FindGameObjectsWithTag("Item");
         int id;
         for (int i = 0; i < allitems.Length; ++i) {
@@ -704,9 +778,9 @@ public class player : NetworkBehaviour
         }
         if (isLocalPlayer)
         {
-           // print(magnitude);
-            if (magnitude > 10f) {
-                Dmg((int)((magnitude-10)*4));
+          //  print(magnitude);
+            if (magnitude < -5) {//7
+                Dmg((int)(-(magnitude+5)*8));
             }
         }
     }

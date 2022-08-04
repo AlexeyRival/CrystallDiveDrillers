@@ -12,15 +12,28 @@ public class Destroyer : MonoBehaviour
     }
     private void OnCollisionEnter(Collision collision)
     {
-        if (collision.gameObject.CompareTag("Resource"))
+        if (collision.collider.gameObject.CompareTag("Resource"))
         {
-            int id = int.Parse(collision.gameObject.name);
+            int id = int.Parse(collision.collider.gameObject.name);
             resources[id].SpawnItem(transform.position);
-            Destroy(collision.gameObject);
+            Destroy(collision.collider.gameObject);
         }
-        if (collision.gameObject.CompareTag("Decoration"))
+        if (collision.collider.gameObject.CompareTag("Decoration"))
         { 
-            Destroy(collision.gameObject);
+            Destroy(collision.collider.gameObject);
+        }
+    }
+    private void OnCollisionStay(Collision collision)
+    {
+        if (collision.collider.gameObject.CompareTag("Resource"))
+        {
+            int id = int.Parse(collision.collider.gameObject.name);
+            resources[id].SpawnItem(transform.position);
+            Destroy(collision.collider.gameObject);
+        }
+        if (collision.collider.gameObject.CompareTag("Decoration"))
+        { 
+            Destroy(collision.collider.gameObject);
         }
     }
 }

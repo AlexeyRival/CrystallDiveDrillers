@@ -33,6 +33,7 @@ public class MissionMenuController : MonoBehaviour
     }
     public void StepSupply(int d)
     {
+        return;//TODO УБРАТЬ
         supplyvalue += d;
         if (supplyvalue < 0) supplyvalue = 0;
         if (supplyvalue > supplylevels.Length-1) supplyvalue = supplylevels.Length-1;
@@ -45,7 +46,8 @@ public class MissionMenuController : MonoBehaviour
     {
         difficultyvalue += d;
         if (difficultyvalue < 0) difficultyvalue = 0;
-        if (difficultyvalue > difficulties.Length-1) difficultyvalue = difficulties.Length-1;
+        if (difficultyvalue > 4) difficultyvalue = 4;
+        //TODO ВЕРНУТЬ if (difficultyvalue > difficulties.Length-1) difficultyvalue = difficulties.Length-1;
         diffmult.text = "+" + difficulties[difficultyvalue].bonus+"%";
         diffname.text = difficulties[difficultyvalue].difname;
         difpic.sprite = difficulties[difficultyvalue].icon;

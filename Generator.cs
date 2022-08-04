@@ -17,6 +17,7 @@ public class Generator : NetworkBehaviour
     public static bool isWorking;
     public static Vector3 center;
     public List<Vector3> startpoints;
+    public List<Vector3> bugspawnpoints;
     public List<Vector3> cavepoints;
     public List<Vector3> tunnelpoints;
     public List<Resource> resources;
@@ -228,6 +229,9 @@ public class Generator : NetworkBehaviour
                 xp_firstquest = 2500;
             }
         }
+
+        xp_kills += player.thisplayer.kills;
+
         xp_resource = (int)(xp_resource*missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
         xp_kills= (int)(xp_kills * missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
         xp_firstquest = (int)(xp_firstquest*missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
@@ -307,7 +311,7 @@ public class Generator : NetworkBehaviour
             previosupdated = updatedchunks;
         }
 
-        print(resault);
+     //   print(resault);
         Debug.DrawRay(resault, Vector3.up, Color.white, 10f);
         Debug.DrawRay(thispathendpoint, Vector3.up, Color.grey, 10f);
         outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
@@ -476,6 +480,7 @@ public class Generator : NetworkBehaviour
         generatedpoints = 0;
         path = new List<int>();
         startpoints = new List<Vector3>();
+        bugspawnpoints = new List<Vector3>();
         cavepoints = new List<Vector3>();
         tunnelpoints = new List<Vector3>();
         Vector3 walker;
@@ -515,7 +520,7 @@ public class Generator : NetworkBehaviour
         generatingphase = 1;
     //    if(isServer) yield return CalculateFriends();
         isGeneratingCompleted = true;
-        blackscreen.SetActive(false);
+       // blackscreen.SetActive(false);
         loading.SetActive(false);
     }
     IEnumerator Start()
@@ -730,8 +735,8 @@ public class Generator : NetworkBehaviour
             deleteitalllocal = deleteitall;
             planet.SetActive(true);
             hub.SetActive(true);
-            for (int i = 0; i < GameObject.FindGameObjectsWithTag("Cluster").Length; ++i) {
-                Destroy(GameObject.FindGameObjectsWithTag("Cluster")[i]);
+            for (int i = 0; i < GameObject.FindGameObjectsWithTag("Chunk").Length; ++i) {
+                Destroy(GameObject.FindGameObjectsWithTag("Chunk")[i]);
             }
             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Bug").Length; ++i) {
                 Destroy(GameObject.FindGameObjectsWithTag("Bug")[i]);

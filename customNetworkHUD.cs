@@ -19,6 +19,11 @@ public class customNetworkHUD : NetworkManager
     public int[] dwarfprestige=new int[8];
     public int accountlvl, accountxp;
     public GameObject classselector, blackscreen;
+
+    //механизм защиты
+    private string requiredpassword, password;
+    private bool activated=true;
+
     #region singleton
     public static customNetworkHUD Instanse { get; private set; }
     #endregion
@@ -54,6 +59,11 @@ public class customNetworkHUD : NetworkManager
             dwarfprestige = new int[8];
         }
         characterclass = -1;
+        requiredpassword = ""+ (System.DateTime.Now.DayOfYear * System.DateTime.Now.Hour * 618);
+        char[] arr = requiredpassword.ToCharArray();
+        System.Array.Reverse(arr);
+        requiredpassword = new string(arr);
+        print(requiredpassword);
     }
     public void Save()
     {
@@ -104,6 +114,17 @@ public class customNetworkHUD : NetworkManager
     }
     private void OnGUI()
     {
+        if (!activated) {
+            GUI.Box(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f+40, 200, 20), "Код активации:");
+            password = GUI.TextField(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f+60, 200, 20), password);
+            if (GUI.Button(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f + 80, 200, 20), "Активировать"))
+            {
+                if (requiredpassword == password) {
+                    activated = true;
+                }
+            }
+        }
+        else
         if (!connected)
         {
             GUI.Box(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f, 50, 20), "IP:");

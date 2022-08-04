@@ -9,15 +9,17 @@ public class bug : NetworkBehaviour
     public Generator generator;
     [SyncVar]
     public state State;
+    [SyncVar]
     public bool isStartWalking;
     public float speed = 3.5f;
     public float agression = 1f;
     public float scale = 1f;
-    public List<Vector3> path;
+    public SyncListVector3 path = new SyncListVector3();
+    [SyncVar]
     private int currentpoint;
     public Transform rotator;
 
-    public GameObject attacksphere, hitsphere, donthitsphere;
+    public GameObject attacksphere, hitsphere, donthitsphere,spawneffect;
 
     public Slider hpbar;
     public GameObject back;//спина
@@ -41,6 +43,8 @@ public class bug : NetworkBehaviour
     private GameObject target;
     public int maxhp = 100;
     private int localhp = 100;
+    private float spawnedtimer;
+    private bool isSpawn;
 
     private HashSet<int> infos;
     [SyncVar]
@@ -146,7 +150,11 @@ public class bug : NetworkBehaviour
     }
     public void SetPath(List<Vector3> path)
     {
-        this.path = path;
+        this.path.Clear();
+        for (int i = 0; i < path.Count; ++i)
+        {
+            this.path.Add(path[i]);
+        }
         currentpoint = 0;
         if (path.Count > 0) isStartWalking = true;
     }
@@ -160,22 +168,33 @@ public class bug : NetworkBehaviour
         {
             infos = new HashSet<int>();
         }
+        spawnedtimer = Random.Range(3.5f, 4.5f);
+        Destroy(Instantiate(spawneffect, transform.position, transform.rotation),spawnedtimer*0.5f);
+        transform.Translate(0, -spawnedtimer*2, 0);
+        transform.Rotate(-90,0,0);
+        if (isServer) {
+            SetPath(new List<Vector3>(new Vector3[] { transform.position+ new Vector3(0,spawnedtimer*2,0),transform.position+ new Vector3(Random.Range(-1f,1f),spawnedtimer*2, Random.Range(-1f, 1f)),transform.position+ new Vector3(Random.Range(-1f,1f),spawnedtimer*2, Random.Range(-1f, 1f)), transform.position + new Vector3(0, spawnedtimer * 2, 0) }));
+        }
     }
     void Update()
     {
+        //if (!isSpawn) { if (spawnedtimer > 0f) { spawnedtimer -= Time.deltaTime; transform.Translate(0, 0, Time.deltaTime*2); return; } else { isSpawn = true;transform.Rotate(90, 0, 0); } }
+        transform.rotation = Quaternion.Lerp(transform.rotation, rotator.rotation, 3f * Time.deltaTime);//2
+        if (isStartWalking) {
+            if (currentpoint == path.Count-1) { isStartWalking = false; return; }
+            rotator.LookAt(path[currentpoint]);
+            transform.Translate(0, 0, Time.deltaTime * speed);
+            
+        }
         if (isServer)
         {
-            transform.rotation = Quaternion.Lerp(transform.rotation, rotator.rotation, 3f * Time.deltaTime);//2
             if (isStartWalking)
             {
-                if (currentpoint == path.Count) { isStartWalking = false; return; }
-                rotator.LookAt(path[currentpoint]);
-                transform.Translate(0, 0, Time.deltaTime * speed);
                 if (Vector3.Distance(transform.position, path[currentpoint]) < 1f)
                 {
                     ++currentpoint;
                 }
-                if (Vector3.Distance(target.transform.position, transform.position) < 3)
+                if(target)if (Vector3.Distance(target.transform.position, transform.position) < 3)
                 {
                     isStartWalking = false;
                 }
@@ -530,6 +549,7 @@ public class bug : NetworkBehaviour
             if (collision.gameObject.CompareTag("Destroyer")) {
                 Dmg(15,collision.other.gameObject);
                 CmdDmg(15);
+                if (hp - 15<0) { ++player.thisplayer.kills; }
             }
         }
         if (collision.gameObject.CompareTag("Destroyer"))
@@ -559,5 +579,6 @@ public class bug : NetworkBehaviour
         }
     }
     public class SyncListDamageInfo:SyncListStruct<damageinfo> { }
+    public class SyncListVector3:SyncListStruct<Vector3> { }
     /**/
 }
