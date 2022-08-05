@@ -99,7 +99,8 @@ public class Generator : NetworkBehaviour
         //pathendpoint = mule.transform.position;//newpos;//
         //pathstartpoint = newpos; //mule.transform.position;//
         //List<Vector3> bufferpath = CalculatePath();
-        mule.GetComponent<mule>().SetPath(GetPath(mule.transform.position,newpos));
+        //mule.GetComponent<mule>().SetPath(GetPath(mule.transform.position,newpos));
+        mule.GetComponent<mule>().SetPath(GetFastPath(mule.transform.position,newpos));
     }
     public List<Vector3> GetPath(Vector3 start,Vector3 end) {
         pathendpoint = start;
@@ -112,9 +113,10 @@ public class Generator : NetworkBehaviour
     {
         pathendpoint = start;
         pathstartpoint = end;
-        List<Vector3> bufferpath = CalculateFastPath();
+        //List<Vector3> bufferpath = CalculateFastPath();
+        List<Vector3> bufferpath = CalculateUltraPath();
         bufferpath.RemoveAt(0);
-        bufferpath.Add(start);
+        bufferpath.Add(end);
         return bufferpath;
     }
     [Command]
@@ -326,25 +328,27 @@ public class Generator : NetworkBehaviour
             print(":(");
         }
         return outpath;
+    
     }
-    public List<Vector3> CalculateFastPath()
-    {
-        List<Vector3> outpath = new List<Vector3>();
+    public List<Vector3> CalculateUltraPath() {
 
+        List<Vector3> outpath = new List<Vector3>();
         marchingspace endchunk = manager.marchingspaces[0];
         Vector3 thispathendpoint = pathendpoint;
+
+        bool grandbreakend = false, grandbreakstart = false;
         bool grandbreak = false;
         Dictionary<string, bool> isCalculated = new Dictionary<string, bool>();
         Vector3 resault = new Vector3(-1, -1, -1);
         for (int i = 0; i < manager.marchingspaces.Length; ++i)
         {
             manager.marchingspaces[i].ClearWeights();
+            manager.marchingspaces[i].isChecked = false;
         }
         for (int i = 0; i < manager.marchingspaces.Length; ++i)
         {
             foreach (var point in manager.marchingspaces[i].walkpoints)
             {
-                //if (Vector3.Distance(point.Key, pathendpoint)<2) {
                 if (FastDist(point.Key, pathendpoint, 4))
                 {
                     isCalculated[manager.marchingspaces[i].name] = true;
@@ -359,30 +363,21 @@ public class Generator : NetworkBehaviour
             }
             if (grandbreak) { break; }
         }
-        int updatedchunks = 0, previosupdated = -1;
-        grandbreak = false;
-        if (resault == new Vector3(-1, -1, -1)) for (int k = 0; k < sizeX * 10; ++k)
-            {//должно хватить
-                updatedchunks = 0;
-                for (int i = 0; i < manager.marchingspaces.Length; ++i) if (isCalculated.ContainsKey(manager.marchingspaces[i].name)&&isCalculated[manager.marchingspaces[i].name])
-                    {
-                        for (int ii = 0; ii < manager.marchingspaces[i].friends.Count; ++ii) if (!isCalculated.ContainsKey(manager.marchingspaces[i].friends[ii].name))
-                            {
-                                isCalculated[manager.marchingspaces[i].friends[ii].name] = true;
-                                resault = manager.marchingspaces[i].friends[ii].CalculateWeights(pathstartpoint);
-                                ++updatedchunks;
-                                if (resault != new Vector3(-1, -1, -1))
-                                {
-                                    endchunk = manager.marchingspaces[i].friends[ii];
-                                    grandbreak = true; break;
-                                }
-                            }
-                        if (grandbreak) { break; }
-                        isCalculated[manager.marchingspaces[i].name] = false;
-                    }
-                if (previosupdated == updatedchunks || grandbreak) { break; }
-                previosupdated = updatedchunks;
+
+        if (resault == new Vector3(-1, -1, -1)) 
+        {
+            List<marchingspace> mslist = GetMSChain(endchunk,pathstartpoint);
+            mslist.Reverse();
+            for (int i = 0; i < mslist.Count; ++i)
+            {
+                resault = mslist[i].CalculateWeights(pathstartpoint);
+                if (resault != new Vector3(-1, -1, -1))
+                {
+                    endchunk = mslist[i];
+                    break;
+                }
             }
+        }
         outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
         return outpath;
     }
@@ -425,6 +420,25 @@ public class Generator : NetworkBehaviour
             
         }
         return outlist;
+    }
+    public List<marchingspace> GetMSChain(marchingspace ms, Vector3 target) {
+        List<marchingspace> mslist = new List<marchingspace>();
+        ms.isChecked = true;
+        if (!((target.x < ms.transform.position.x || target.x > ms.transform.position.x + ms.sizeX) || (target.y < ms.transform.position.y || target.y > ms.transform.position.y + ms.sizeY) || (target.z < ms.transform.position.z || target.z > ms.transform.position.z + ms.sizeZ))) 
+        {
+            Debug.DrawLine(target, ms.center, Color.cyan,30f);
+            mslist.Add(ms);
+            return mslist;
+        }
+        for (int i = 0; i < ms.friends.Count; ++i) if(!ms.friends[i].isChecked){
+            mslist = GetMSChain(ms.friends[i],target);
+            if (mslist.Count != 0) {
+                Debug.DrawLine(ms.friends[i].center, ms.center, Color.blue, 30f);
+                mslist.Add(ms);
+                return mslist;
+            }
+        }
+        return mslist;
     }
     public class walkpoint {
         public Vector3 position;

@@ -242,7 +242,8 @@ public class bug : NetworkBehaviour
                             {
                                 try
                                 {
-                                    SetPath(generator.GetPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    //SetPath(generator.GetPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    SetPath(generator.GetFastPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
                                     path.Add(path[path.Count - 1] + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f)));
                                     for (int i = 0; i < path.Count; ++i)
                                     {
@@ -536,6 +537,16 @@ public class bug : NetworkBehaviour
             this.enabled = false;
             Destroy(gameObject,5f);
             DropAll();
+        }
+    }
+    private void OnDrawGizmos()
+    {
+        if (Application.isPlaying) {
+            Gizmos.color = new Color(0.565f,0.018f,0.433f);
+            for(int i = 0; i < path.Count; ++i)
+            {
+                Gizmos.DrawCube(path[i], new Vector3(0.2f, 0.2f, 0.2f));
+            }
         }
     }
     private void OnDestroy()

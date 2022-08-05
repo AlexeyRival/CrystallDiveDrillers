@@ -23,6 +23,7 @@ public class marchingspace : MonoBehaviour
     public Dictionary<Vector3, Generator.walkpoint> walkpoints;
     public Dictionary<Vector3, byte> borderpoints;
     public Dictionary<Vector3Int, GameObject> spawneddecorations;
+    public bool isChecked;
 
     void Start()
     {
