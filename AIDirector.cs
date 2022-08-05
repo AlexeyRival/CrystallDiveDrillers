@@ -5,7 +5,7 @@ using UnityEngine.Networking;
 
 public class AIDirector : NetworkBehaviour
 {
-    public GameObject bug, opressor, ironOpressor;
+    public GameObject bug, mimicbug, opressor, ironOpressor;
     public Generator generator;
     public MissionMenuController missioncontroller;
     public difficulty currentdifficulty;
@@ -17,10 +17,12 @@ public class AIDirector : NetworkBehaviour
     {
         RaycastHit hit;
         GameObject ob;
+        bool isMimicBug;
         for (int i = 0; i < 5; ++i)
         {
+            isMimicBug = Random.Range(0, 100) < 15;
             Physics.Raycast(generator.bugspawnpoints[Random.Range(0, generator.bugspawnpoints.Count)], Vector3.down, out hit);
-            ob = Instantiate(bug, hit.point, Quaternion.Euler(0, Random.Range(0, 360), 0));
+            ob = Instantiate(isMimicBug ? mimicbug : bug, hit.point, Quaternion.Euler(0, Random.Range(0, 360), 0));
             if (i == 0) {
                 ob.GetComponent<bug>().agression *= 1.1f;
                 ob.GetComponent<bug>().speed *= 1.1f;

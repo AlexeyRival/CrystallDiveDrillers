@@ -244,13 +244,16 @@ public class bug : NetworkBehaviour
                                 {
                                     //SetPath(generator.GetPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
                                     SetPath(generator.GetFastPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    if (path.Count == 0) {
+                                        //TODO ворует путь у другого жука
+                                    }
                                     path.Add(path[path.Count - 1] + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f)));
                                     for (int i = 0; i < path.Count; ++i)
                                     {
                                         path[i] += new Vector3(Random.Range(-0.5f, 0.5f), 0, Random.Range(-0.5f, 0.5f));
                                     }
                                 }
-                                catch { updatetimer = 1000 + Random.Range(-100, 100); }
+                                catch { updatetimer = 500 + Random.Range(-100, 100); }
                                 if (Random.Range(0, 4) != 0)
                                 {
                                     State = state.move;

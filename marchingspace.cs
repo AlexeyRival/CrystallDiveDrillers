@@ -23,7 +23,10 @@ public class marchingspace : MonoBehaviour
     public Dictionary<Vector3, Generator.walkpoint> walkpoints;
     public Dictionary<Vector3, byte> borderpoints;
     public Dictionary<Vector3Int, GameObject> spawneddecorations;
+    
+    //поиск пути
     public bool isChecked;
+    public int weight;
 
     void Start()
     {
@@ -234,12 +237,14 @@ public class marchingspace : MonoBehaviour
         int max = 0;
         int x, y, z, i;
         int borders, matches;
+        string smellname;
         for (x = 0; x < sizeX - 1; ++x)
         {
             for (y = 0; y < sizeY - 1; ++y)
             {
                 for (z = 0; z < sizeZ - 1; ++z)
                 {
+                    smellname = "-1";
                     bufdata = getData(getMC(getMCId(new bool[] { space[x, y, z], space[x + 1, y, z], space[x + 1, y, z + 1], space[x, y, z + 1], space[x, y + 1, z], space[x + 1, y + 1, z], space[x + 1, y + 1, z + 1], space[x, y + 1, z + 1] })));
                     for (i = 0; i < bufdata.verts.Length; ++i)
                     {
@@ -337,18 +342,19 @@ public class marchingspace : MonoBehaviour
         {
             foreach (var point in walkpoints)
             {
-             //   if (point.Value.isBorder)
+                //   if (point.Value.isBorder)
                 {
                     for (i = 0; i < neighborsTable.Length; ++i)
                     {
-                        if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step))
+                        if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step) && !point.Value.friends.Contains(point.Value.position + neighborsTable[i] * step))
                         {
                             point.Value.friends.Add(point.Value.position + neighborsTable[i] * step);
+                            walkpoints[point.Value.position + neighborsTable[i] * step].friends.Add(point.Key);
                         }
                     }
                 }
             }
-            generator.walkpointscount += walkpoints.Count;
+                generator.walkpointscount += walkpoints.Count;
         }
         mesh.vertices = fuckthislist.ToArray();
         mesh.triangles = triangles.ToArray();
@@ -361,6 +367,11 @@ public class marchingspace : MonoBehaviour
     }
     public Vector3 CalculateWeights(Vector3 finalpoint) {
         Vector3 resualt=SetWeights(finalpoint);
+        SetCorners();
+        return resualt;
+    }
+    public Vector3 CalculateWeightsFast(Vector3 finalpoint) {
+        Vector3 resualt=SetWeightsFast(finalpoint);
         SetCorners();
         return resualt;
     }
@@ -411,6 +422,41 @@ public class marchingspace : MonoBehaviour
         }
         return new Vector3(-1, -1, -1);
     }
+    private Vector3 SetWeightsFast(Vector3 finalpoint) {
+        List<Vector3> buffer = new List<Vector3>();
+        List<Vector3> secondbuffer = new List<Vector3>();
+        int k = 0;
+
+        foreach (var point in walkpoints)
+        {
+            if (point.Value.weight != 0)
+            {
+               buffer.Add(point.Key);
+            }
+        }
+        while (k < 20)
+        {
+            ++k;
+            for (int i = 0; i < buffer.Count; ++i)
+            {
+                if (Generator.FastDist(buffer[i], finalpoint, 4))
+                {
+                    return buffer[i];
+                }
+                for (int ii = 0; ii < walkpoints[buffer[i]].friends.Count; ++ii) 
+                {
+                    if (walkpoints[walkpoints[buffer[i]].friends[ii]].weight == 0) {
+                        walkpoints[walkpoints[buffer[i]].friends[ii]].weight = walkpoints[buffer[i]].weight+1;
+                        secondbuffer.Add(walkpoints[buffer[i]].friends[ii]);
+                    }
+                }
+            }
+            buffer = secondbuffer;
+            secondbuffer = new List<Vector3>();
+            if (buffer.Count == 0) { break; }
+        }
+        return new Vector3(-1, -1, -1);
+    }
     private void SetCorners() {
         int count = 0;
         foreach (var point in borderpoints) if (walkpoints[point.Key].weight != 0)//
@@ -434,6 +480,7 @@ public class marchingspace : MonoBehaviour
             }
     }
     public void ClearWeights() {
+        weight = 9999;
         foreach (var point in walkpoints) {
             point.Value.weight = 0;
         }
@@ -467,7 +514,7 @@ public class marchingspace : MonoBehaviour
     }
     private void OnDrawGizmos()
     {
-        if (false)//Application.isPlaying)
+        if (Application.isPlaying)
         {
             if (isGizmosDraws)
             {
@@ -493,9 +540,9 @@ public class marchingspace : MonoBehaviour
                 if (point.Value.weight!=0)
                 {
                     for (int ii = 0; ii < point.Value.friends.Count; ++ii) {
-                      //  Debug.DrawLine(point.Value.position, walkpoints[point.Value.friends[ii]].position,new Color(0.83f, 0.93f, 0.2f, 0.2f));
+               //        Debug.DrawLine(point.Value.position, walkpoints[point.Value.friends[ii]].position,new Color(0.83f, 0.93f, 0.2f, 0.2f));
                     }//new Color(0.83f-Mathf.Sin(3*point.Value.weight*0.05f), Mathf.Sin(3 * point.Value.weight * 0.05f), Mathf.Sin(1.5f * point.Value.weight * 0.05f), 0.4f);
-                    Gizmos.color = new Color(0.83f-(point.Value.weight*0.1f), (point.Value.weight * 0.1f), 0.2f, 0.4f);
+                    Gizmos.color = new Color(0.83f-(point.Value.weight*0.03f), (point.Value.weight * 0.3f), 0.2f, 0.4f);
                 }
                 Gizmos.DrawWireCube(point.Value.position, new Vector3(0.5f, 0.5f, 0.5f));
             }

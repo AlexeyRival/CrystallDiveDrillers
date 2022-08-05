@@ -115,8 +115,11 @@ public class Generator : NetworkBehaviour
         pathstartpoint = end;
         //List<Vector3> bufferpath = CalculateFastPath();
         List<Vector3> bufferpath = CalculateUltraPath();
-        bufferpath.RemoveAt(0);
-        bufferpath.Add(end);
+        if (bufferpath.Count > 0)
+        {
+            bufferpath.RemoveAt(0);
+            bufferpath.Add(end);
+        }
         return bufferpath;
     }
     [Command]
@@ -331,7 +334,6 @@ public class Generator : NetworkBehaviour
     
     }
     public List<Vector3> CalculateUltraPath() {
-
         List<Vector3> outpath = new List<Vector3>();
         marchingspace endchunk = manager.marchingspaces[0];
         Vector3 thispathendpoint = pathendpoint;
@@ -340,6 +342,7 @@ public class Generator : NetworkBehaviour
         bool grandbreak = false;
         Dictionary<string, bool> isCalculated = new Dictionary<string, bool>();
         Vector3 resault = new Vector3(-1, -1, -1);
+        double time = Time.realtimeSinceStartup;
         for (int i = 0; i < manager.marchingspaces.Length; ++i)
         {
             manager.marchingspaces[i].ClearWeights();
@@ -353,7 +356,7 @@ public class Generator : NetworkBehaviour
                 {
                     isCalculated[manager.marchingspaces[i].name] = true;
                     point.Value.weight = 1;
-                    resault = manager.marchingspaces[i].CalculateWeights(pathstartpoint);
+                    resault = manager.marchingspaces[i].CalculateWeightsFast(pathstartpoint);
                     thispathendpoint = point.Key;
                     endchunk = manager.marchingspaces[i];
                     grandbreak = true;
@@ -364,13 +367,39 @@ public class Generator : NetworkBehaviour
             if (grandbreak) { break; }
         }
 
-        if (resault == new Vector3(-1, -1, -1)) 
+        if (resault == new Vector3(-1, -1, -1))
         {
-            List<marchingspace> mslist = GetMSChain(endchunk,pathstartpoint);
+            List<marchingspace> buflist = new List<marchingspace>();
+            List<marchingspace> secondbuflist = new List<marchingspace>();
+            for (int i = 0; i < manager.marchingspaces.Length; ++i) 
+            {
+                if (IsMSContainPoint(manager.marchingspaces[i], pathstartpoint)) 
+                {
+                    manager.marchingspaces[i].weight = 0;
+                    buflist.Add(manager.marchingspaces[i]);
+                    break;
+                }
+            }
+            for (int k = 0; k < sizeX * 27 * 2; ++k)
+            {
+                for (int i = 0; i < buflist.Count; ++i)
+                {
+                    for (int ii = 0; ii < buflist[i].friends.Count; ++ii) if (buflist[i].friends[ii].weight == 9999)
+                        {
+                            buflist[i].friends[ii].weight = buflist[i].weight + 1;
+                            secondbuflist.Add(buflist[i].friends[ii]);
+                        }
+                }
+                buflist = secondbuflist;
+                secondbuflist = new List<marchingspace>();
+                if (buflist.Count == 0) { break; }
+            }
+            List<marchingspace> mslist = GetMSChainShort(endchunk, pathstartpoint);
             mslist.Reverse();
+
             for (int i = 0; i < mslist.Count; ++i)
             {
-                resault = mslist[i].CalculateWeights(pathstartpoint);
+                resault = mslist[i].CalculateWeightsFast(pathstartpoint);
                 if (resault != new Vector3(-1, -1, -1))
                 {
                     endchunk = mslist[i];
@@ -421,6 +450,15 @@ public class Generator : NetworkBehaviour
         }
         return outlist;
     }
+    public void SetMSWeights(marchingspace ms) {
+        for (int i = 0; i < ms.friends.Count; ++i) {
+            if (ms.friends[i].weight != 0) { ms.weight = ms.friends[i].weight + 1; }
+        }
+    }
+    public bool IsMSContainPoint(marchingspace ms, Vector3 target)
+    {
+        return (!((target.x < ms.transform.position.x || target.x > ms.transform.position.x + ms.sizeX) || (target.y < ms.transform.position.y || target.y > ms.transform.position.y + ms.sizeY) || (target.z < ms.transform.position.z || target.z > ms.transform.position.z + ms.sizeZ)));
+    }
     public List<marchingspace> GetMSChain(marchingspace ms, Vector3 target) {
         List<marchingspace> mslist = new List<marchingspace>();
         ms.isChecked = true;
@@ -434,6 +472,24 @@ public class Generator : NetworkBehaviour
             mslist = GetMSChain(ms.friends[i],target);
             if (mslist.Count != 0) {
                 Debug.DrawLine(ms.friends[i].center, ms.center, Color.blue, 30f);
+                mslist.Add(ms);
+                return mslist;
+            }
+        }
+        return mslist;
+    }
+    public List<marchingspace> GetMSChainShort(marchingspace ms, Vector3 target) {
+        List<marchingspace> mslist = new List<marchingspace>();
+        ms.isChecked = true;
+        if (ms.weight==0) 
+        {
+            Debug.DrawLine(target, ms.center, Color.cyan,30f);
+            mslist.Add(ms);
+            return mslist;
+        }
+        for (int i = 0; i < ms.friends.Count; ++i) if(ms.friends[i].weight<ms.weight){
+            mslist = GetMSChain(ms.friends[i],target);
+            if (mslist.Count != 0) {
                 mslist.Add(ms);
                 return mslist;
             }
