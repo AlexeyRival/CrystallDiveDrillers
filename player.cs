@@ -10,6 +10,7 @@ public class player : NetworkBehaviour
     public GameObject rotator;
     public Weapon weapon;
     public AudioSource Audio;
+    public AudioClip m_getresource;
     public float speed = 75f;
     private float sprint=1f;
     private float acceleration;
@@ -20,6 +21,7 @@ public class player : NetworkBehaviour
     public TextMesh hpobject;
     private Rigidbody rb;
     private Vector3 mousedelta;
+    private float rot;
     private RaycastHit hit;
     public List<Resource> resources;
     public Animator animator;
@@ -67,7 +69,7 @@ public class player : NetworkBehaviour
     public characterclass[] classes;
     public GameObject UIobject,UIInventory,UIRevive, crosshair;
     public Text UIhp,UIshld;
-    public Slider hpbar, shldbar, flarebar,grenadebar;
+    public Slider hpbar, shldbar, flarebar,grenadebar,compass;
     public Image classpic,UIBlackScreen;
     public GameObject expscreen;
     private bool isFade;
@@ -333,6 +335,7 @@ public class player : NetworkBehaviour
             UIshld = UIobject.transform.Find("ShieldImage").transform.Find("ShieldText").GetComponent<Text>();
             shldbar = UIobject.transform.Find("ShieldImage").transform.Find("ShieldBorder").GetComponent<Slider>();
             flarebar = UIobject.transform.Find("Flare").GetComponent<Slider>();
+            compass = UIobject.transform.Find("Compass").GetComponent<Slider>();
             grenadebar = UIobject.transform.Find("Grenade").GetComponent<Slider>();
             classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
             shieldpic = UIobject.transform.Find("Shield").GetComponent<Image>();
@@ -383,6 +386,7 @@ public class player : NetworkBehaviour
                 mousedelta.x = Input.GetAxis("Mouse X");
                 mousedelta.y = Input.GetAxis("Mouse Y");
                 transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
+                rot += mousedelta.x * Time.deltaTime;
                 head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
                 timerforcam += Time.deltaTime;
                 ismoving = false;
@@ -418,6 +422,9 @@ public class player : NetworkBehaviour
                 moveVector = transform.TransformDirection(moveVector);
                 if(moveVector!=new Vector3())rb.velocity = new Vector3(moveVector.x, rb.velocity.y, moveVector.z);
                 moveVector = new Vector3();
+                if (Input.GetKey(KeyCode.RightControl) && Input.GetKey(KeyCode.F6)) {
+                            CmdStartMission();
+                }
                 if (Input.GetKey(KeyCode.E))
                 {
                     if (seeContainer && containercooldown <= 0)
@@ -532,6 +539,9 @@ public class player : NetworkBehaviour
                 slot1.transform.rotation = Quaternion.Slerp(slot1.transform.rotation, rotator.transform.rotation,3f*Time.deltaTime);
                 slot1.transform.position = Vector3.Slerp(slot1.transform.position, rotator.transform.position, 3f * Time.deltaTime);
                 if (crosshair.GetComponent<Image>().color.b < 1f) { crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color + new Color(0, Time.deltaTime*3, Time.deltaTime * 3); }
+                if (rot < -1.8f) { rot += 3.6f; }
+                if (rot > 1.8f) { rot -= 3.6f; }
+                compass.value = (rot % (3.6f))/(-0.25f*3.6f);//*-(2f/3.65f);
 
                 //удаление
                 
@@ -763,6 +773,10 @@ public class player : NetworkBehaviour
             speed = classes[characterclass].speed;
         }
     }
+    private void OnGUI()
+    {
+        //GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), "" + rot);
+    }
     private void OnCollisionEnter(Collision collision)
     {
         if (collision.gameObject.CompareTag("Item"))
@@ -773,6 +787,7 @@ public class player : NetworkBehaviour
                 {
                     CmdAddResource(id,1);
                 }
+                Audio.PlayOneShot(m_getresource);
                 Destroy(collision.gameObject);
             }
         }
