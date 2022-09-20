@@ -438,7 +438,7 @@ public class Generator : NetworkBehaviour
         outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
         return outpath;
     }
-    public List<Vector3> CalculateNeoPath() 
+    public List<Vector3> CalculateNeoPathOld() 
     {
         List<Vector3> outpath = new List<Vector3>();
 
@@ -448,15 +448,18 @@ public class Generator : NetworkBehaviour
         ComputeBuffer navbuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 4 + sizeof(int));
         navbuffer.SetData(walkpoints);
         turbopath.SetBuffer(_kernelindex, "points", navbuffer);
+        turbopath.SetBool("isEnded", false);
+        turbopath.SetInt("endpointid", -1);
         int numThreadsPerAxis = Mathf.CeilToInt(walkpoints.Length / (float)8);
         turbopath.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
         _kernelindex = turbopath.FindKernel("Splat");
-        turbopath.SetVector("startpoint", startpoint - transform.position);
+        turbopath.SetVector("startpoint", pathstartpoint);
+        turbopath.SetVector("endpoint", pathendpoint);
         turbopath.SetBuffer(_kernelindex, "points", navbuffer);
         turbopath.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
         _kernelindex = turbopath.FindKernel("Set");
         turbopath.SetBuffer(_kernelindex, "points", navbuffer);
-        for (int i = 0; i < 100; ++i)
+        for (int i = 0; i < 4; ++i)
         {
             turbopath.SetInt("iter", i);
             turbopath.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
@@ -470,7 +473,7 @@ public class Generator : NetworkBehaviour
 
         return outpath;
     }
-    public List<Vector3> CalculateNeoPathOld() {
+    public List<Vector3> CalculateNeoPath() {
         List<Vector3> outpath = new List<Vector3>();
         TurboMarching origin=null;
         for (int i = 0; i < manager.turboMarchings.Length; ++i) {
@@ -479,8 +482,93 @@ public class Generator : NetworkBehaviour
                 origin = manager.turboMarchings[i];
             }
         }
-        if(origin!=null)origin.SetNavigation(pathstartpoint);
+        if (origin != null)
+        {
+            print("регистрация");
+            TurboMarching targetm = null;
+            //origin.UpdateFriends();
+            for (int i = 0; i < manager.turboMarchings.Length; ++i) { manager.turboMarchings[i].isChecked = false; manager.turboMarchings[i].weight = 0;manager.turboMarchings[i].UpdateFriends(); }
+            origin.weight = 1;
+            HashSet<TurboMarching> buffer = new HashSet<TurboMarching>();
+            buffer.Add(origin);
+            HashSet<TurboMarching> secondbuffer;
+            for (int i = 0; i < 20; ++i)
+            {
+                secondbuffer = new HashSet<TurboMarching>();
+                foreach (var tm in buffer)
+                {
+                    if (IsChunkContainPoint(tm, pathendpoint)) { targetm = tm;print("содержит!"); }
+                    for (int j = 0; j < tm.friends.Count; ++j)
+                    {
+                        if (tm.friends[j].weight == 0)
+                        {
+                            tm.friends[j].weight = tm.weight + 1;
+                            secondbuffer.Add(tm.friends[j]);
+                        }
+                    }
+                }
+                buffer = secondbuffer;
+            }
+            if (targetm != null)
+            {
+                List<TurboMarching> chain = GetChunkChain(targetm, origin);
+            if (chain.Count != 0) 
+            {
+                print("ыыыыЫЫЫЫ!!!");
+                    Vector3 orgn = pathendpoint;
+                    for (int i = 0; i < chain.Count-1; ++i) 
+                    {
+                        chain[i].SetNavigation(GetClosestPoint(chain[i], chain[i + 1]));
+                        outpath.AddRange(chain[i].GetPath(orgn));
+                        orgn = GetClosestPoint(chain[i], chain[i + 1]);
+                    }
+                //chain[chain.Count-1].SetNavigation(GetClosestPoint(chain[chain.Count - 1], chain[i + 1]));
+                }
+            }
+         //   origin.SetNavigation(pathstartpoint);
+        }
         return outpath;
+    }
+    public bool IsChunkContainPoint(TurboMarching ms, Vector3 target) {
+        return !(target.x < ms.transform.position.x || target.y < ms.transform.position.y || target.z < ms.transform.position.z || target.x > ms.transform.position.x + 10 || target.y > ms.transform.position.y + 10 || target.z > ms.transform.position.z + 10);
+    }
+    public Vector3 GetClosestPoint(TurboMarching from, TurboMarching to) 
+    {
+        int minid=0;
+        float mindis = 20f;
+        for (int i = 0; i < from.walkpoints.Length; ++i)
+        {
+            if (from.walkpoints[i].x == 0 || from.walkpoints[i].y == 0 || from.walkpoints[i].z == 0 || from.walkpoints[i].x > 9.5f || from.walkpoints[i].y > 9.5f || from.walkpoints[i].z > 9.5f)
+            {
+                if (Vector3.Distance(from.walkpoints[i].pos + from.transform.position, to.center) < mindis) 
+                {
+                    mindis = Vector3.Distance(from.walkpoints[i].pos + from.transform.position, to.center);
+                    minid = i;
+                }
+            }
+        }
+        return from.walkpoints[minid].pos+from.transform.position;
+    }
+    public List<TurboMarching> GetChunkChain(TurboMarching ms, TurboMarching target)
+    {
+        List<TurboMarching> mslist = new List<TurboMarching>();
+        ms.isChecked = true;
+        if (ms==target)
+        {
+            mslist.Add(ms);
+            return mslist;
+        }
+        for (int i = 0; i < ms.friends.Count; ++i) if (!ms.friends[i].isChecked&&ms.friends[i].weight<ms.weight)
+            {
+                mslist = GetChunkChain(ms.friends[i], target);
+                if (mslist.Count != 0)
+                {
+                    Debug.DrawLine(ms.center, ms.friends[i].center, new Color(0.7f, 0, 0.9f), 10f);
+                    mslist.Add(ms);
+                    return mslist;
+                }
+            }
+        return mslist;
     }
     public void UpdateWalkGroup() {
         List<TurboMarching.Walkpoint> wpslist = new List<TurboMarching.Walkpoint>(2048);
@@ -568,7 +656,7 @@ public class Generator : NetworkBehaviour
             return mslist;
         }
         for (int i = 0; i < ms.friends.Count; ++i) if(ms.friends[i].weight<ms.weight){
-            mslist = GetMSChain(ms.friends[i],target);
+            mslist = GetMSChainShort(ms.friends[i],target);
             if (mslist.Count != 0) {
                 mslist.Add(ms);
                 return mslist;
@@ -587,6 +675,37 @@ public class Generator : NetworkBehaviour
             friends = new List<Vector3>();
             this.isBorder = isBorder;
             pointneighbors = new List<pointneighbor>();
+        }
+    }
+    public class walkpointneighbors 
+    {
+        public int[] arr;
+        public int this[int index] 
+        {
+            get { return arr[index]; }
+            set { arr[index] = value; }
+        }
+        public int Length;
+
+        public walkpointneighbors() 
+        {
+            arr = new int[26];
+            Length = 0;
+        }
+
+        public void Add(int value) 
+        {
+            if (Length > 25) { return; }
+            arr[Length] = value;
+            ++Length;
+        }
+        public void Optimise() 
+        {
+            int[] bufarr=new int[Length];
+            for (int i = 0; i < Length; ++i) 
+            {
+                bufarr[i] = arr[i];
+            }
         }
     }
     public struct pointneighbor 
@@ -693,6 +812,7 @@ public class Generator : NetworkBehaviour
         yield return GenerateClusters();
         yield return GenerateOres();
         yield return new WaitForEndOfFrame();
+        if(isServer)UpdateWalkGroup();
         generatingphase = 1;
     //    if(isServer) yield return CalculateFriends();
         isGeneratingCompleted = true;
@@ -1048,13 +1168,13 @@ public class Generator : NetworkBehaviour
         }
         if (isShowDebugPathFinding) {
             Gizmos.color = new Color(0, 0.4f, 0.8f);
-           // for (int i = 0; i < walkpoints.Count; ++i)
+            for (int i = 0; i < walkpoints.Length; ++i)
             {
-            //    if (walkpoints[i].weight != 0)
+                if (walkpoints[i].weight != 0)
                 {
-            //        Gizmos.color = new Color(0.4f, 0.8f*0.01f*walkpoints[i].weight, 0);
+                    Gizmos.color = new Color(0.4f, 0.8f*0.01f*walkpoints[i].weight, 0);
+                    Gizmos.DrawCube(walkpoints[i].pos, new Vector3(0.05f, 0.05f, 0.05f));
                 }
-           //     Gizmos.DrawCube(walkpoints[i].position, new Vector3(0.5f, 0.5f, 0.5f));
                 Gizmos.color = new Color(0, 0.4f, 0.8f);
             }
             Gizmos.color = new Color(0.6f, 0, 0.6f);

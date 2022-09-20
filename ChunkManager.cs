@@ -13,7 +13,12 @@ public class ChunkManager : MonoBehaviour
     private int[] sizes;
     public bool TURBOMODE;
 
+    private Generator generator;
 
+    private void Start()
+    {
+        generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
+    }
     public void Recalculate()
     {
         if (!TURBOMODE)
@@ -59,7 +64,8 @@ public class ChunkManager : MonoBehaviour
             {
                 for (int ii = i; ii < turboMarchings.Length; ++ii) if (i != ii)
                     {
-                        if (Generator.FastDist(turboMarchings[i].transform.position, turboMarchings[ii].transform.position, turboMarchings[i].sizeXYZ * turboMarchings[i].sizeXYZ + 1))
+                        //if (Generator.FastDist(turboMarchings[i].transform.position, turboMarchings[ii].transform.position, turboMarchings[i].sizeXYZ+ 1))
+                        if (Generator.FastDist(turboMarchings[i].transform.position, turboMarchings[ii].transform.position, (turboMarchings[i].sizeXYZ*turboMarchings[i].step)*(turboMarchings[i].sizeXYZ*turboMarchings[i].step)+ 1))
                         {
                             turboMarchings[i].neighbors.Add(turboMarchings[ii]);
                             turboMarchings[ii].neighbors.Add(turboMarchings[i]);
@@ -89,13 +95,17 @@ public class ChunkManager : MonoBehaviour
                 }
                 else 
                 {
+                    bool isChanged=false;
                     for (int i = 0; i < turboMarchings.Length; ++i) 
                     {
                         if (Vector3.Distance(destroyers[d].transform.position, turboMarchings[i].center) < turboMarchings[i].sizeXYZ + destroyers[d].transform.localScale.x) 
                         {
                             turboMarchings[i].CheckUpdate(destroyers[d]);
+                            isChanged = true;
                         }
                     }
+                    //TODO обновлять!!!!
+                    // if(generator.isServer&&isChanged)generator.UpdateWalkGroup();
                 }
             }
         }
