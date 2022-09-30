@@ -116,26 +116,6 @@ public class Generator : NetworkBehaviour
         //mule.GetComponent<mule>().SetPath(GetPath(mule.transform.position,newpos));
         mule.GetComponent<mule>().SetPath(GetNeoPath(mule.transform.position,newpos));
     }
-    public List<Vector3> GetPath(Vector3 start,Vector3 end) {
-        pathendpoint = start;
-        pathstartpoint = end;
-        List<Vector3> bufferpath = CalculatePath();
-        bufferpath.RemoveAt(0);
-        return bufferpath;
-    }
-    public List<Vector3> GetFastPath(Vector3 start, Vector3 end)
-    {
-        pathendpoint = start;
-        pathstartpoint = end;
-        //List<Vector3> bufferpath = CalculateFastPath();
-        List<Vector3> bufferpath = CalculateUltraPath();
-        if (bufferpath.Count > 0)
-        {
-            bufferpath.RemoveAt(0);
-            bufferpath.Add(end);
-        }
-        return bufferpath;
-    }
     public List<Vector3> GetNeoPath(Vector3 start, Vector3 end) 
     {
         pathendpoint = start;
@@ -293,151 +273,6 @@ public class Generator : NetworkBehaviour
         Currentmission.SetActive(false);
         UpdateAccountLevel();
     }
-    public List<Vector3> CalculatePath() {
-        List<Vector3> outpath = new List<Vector3>();
-        marchingspace endchunk=manager.marchingspaces[0];
-        Vector3 thispathendpoint=pathendpoint;
-
-        bool grandbreakend=false,grandbreakstart=false;
-        bool grandbreak = false;
-        Dictionary<string, bool> isCalculated = new Dictionary<string, bool>();
-        Vector3 resault = new Vector3(-1, -1, -1);
-        for (int i = 0; i < manager.marchingspaces.Length; ++i) {
-            manager.marchingspaces[i].ClearWeights();
-        }
-        for (int i = 0; i < manager.marchingspaces.Length; ++i)
-        {
-            foreach (var point in manager.marchingspaces[i].walkpoints) {
-                //if (Vector3.Distance(point.Key, pathendpoint)<2) {
-                if (FastDist(point.Key, pathendpoint, 4)) {
-                    isCalculated[manager.marchingspaces[i].name] = true;
-                    point.Value.weight = 1;
-                    resault = manager.marchingspaces[i].CalculateWeights(pathstartpoint);
-                    thispathendpoint = point.Key;
-                    endchunk = manager.marchingspaces[i];
-                    grandbreak = true;
-                    Debug.DrawLine(point.Key, pathendpoint, new Color(0.6f, 0.2f, 0), 10f);
-                    break;
-                }
-            }
-            if (grandbreak) { break; }
-        }
-        int updatedchunks = 0,previosupdated=-1;
-        grandbreak = false;
-        if(resault==new Vector3(-1,-1,-1))for (int k = 0; k < sizeX * 10; ++k) {//должно хватить
-            updatedchunks = 0;
-            for (int i = 0; i < manager.marchingspaces.Length; ++i) if(isCalculated.ContainsKey(manager.marchingspaces[i].name)){
-                        for (int ii = 0; ii < manager.marchingspaces[i].friends.Count; ++ii) if (!isCalculated.ContainsKey(manager.marchingspaces[i].friends[ii].name))
-                            {
-                                isCalculated[manager.marchingspaces[i].friends[ii].name] = true;
-                                resault = manager.marchingspaces[i].friends[ii].CalculateWeights(pathstartpoint);
-                                ++updatedchunks;
-                                if (resault != new Vector3(-1, -1, -1))
-                                {
-                                    endchunk = manager.marchingspaces[i].friends[ii];
-                                    grandbreak = true; break;
-                                }
-                            }
-                    if (grandbreak) { break; }
-            }
-            if (previosupdated == updatedchunks||grandbreak) { break; }
-            previosupdated = updatedchunks;
-        }
-
-     //   print(resault);
-        Debug.DrawRay(resault, Vector3.up, Color.white, 10f);
-        Debug.DrawRay(thispathendpoint, Vector3.up, Color.grey, 10f);
-        outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
-        Debug.DrawLine(endchunk.center, resault, Color.cyan, 10f);
-        if (outpath.Count>0) {
-            for (int i = 0; i < outpath.Count; ++i) {
-                Debug.DrawRay(outpath[i],Vector3.up,Color.magenta,10f);
-            }
-        }
-        else
-        {
-            print(":(");
-        }
-        return outpath;
-    
-    }
-    public List<Vector3> CalculateUltraPath() {
-        List<Vector3> outpath = new List<Vector3>();
-        marchingspace endchunk = manager.marchingspaces[0];
-        Vector3 thispathendpoint = pathendpoint;
-
-        bool grandbreakend = false, grandbreakstart = false;
-        bool grandbreak = false;
-        Dictionary<string, bool> isCalculated = new Dictionary<string, bool>();
-        Vector3 resault = new Vector3(-1, -1, -1);
-        double time = Time.realtimeSinceStartup;
-        for (int i = 0; i < manager.marchingspaces.Length; ++i)
-        {
-            manager.marchingspaces[i].ClearWeights();
-            manager.marchingspaces[i].isChecked = false;
-        }
-        for (int i = 0; i < manager.marchingspaces.Length; ++i)
-        {
-            foreach (var point in manager.marchingspaces[i].walkpoints)
-            {
-                if (FastDist(point.Key, pathendpoint, 4))
-                {
-                    isCalculated[manager.marchingspaces[i].name] = true;
-                    point.Value.weight = 1;
-                    resault = manager.marchingspaces[i].CalculateWeightsFast(pathstartpoint);
-                    thispathendpoint = point.Key;
-                    endchunk = manager.marchingspaces[i];
-                    grandbreak = true;
-                    Debug.DrawLine(point.Key, pathendpoint, new Color(0.6f, 0.2f, 0), 10f);
-                    break;
-                }
-            }
-            if (grandbreak) { break; }
-        }
-
-        if (resault == new Vector3(-1, -1, -1))
-        {
-            List<marchingspace> buflist = new List<marchingspace>();
-            List<marchingspace> secondbuflist = new List<marchingspace>();
-            for (int i = 0; i < manager.marchingspaces.Length; ++i) 
-            {
-                if (IsMSContainPoint(manager.marchingspaces[i], pathstartpoint)) 
-                {
-                    manager.marchingspaces[i].weight = 0;
-                    buflist.Add(manager.marchingspaces[i]);
-                    break;
-                }
-            }
-            for (int k = 0; k < sizeX * 27 * 2; ++k)
-            {
-                for (int i = 0; i < buflist.Count; ++i)
-                {
-                    for (int ii = 0; ii < buflist[i].friends.Count; ++ii) if (buflist[i].friends[ii].weight == 9999)
-                        {
-                            buflist[i].friends[ii].weight = buflist[i].weight + 1;
-                            secondbuflist.Add(buflist[i].friends[ii]);
-                        }
-                }
-                buflist = secondbuflist;
-                secondbuflist = new List<marchingspace>();
-                if (buflist.Count == 0) { break; }
-            }
-            List<marchingspace> mslist = GetMSChainShort(endchunk, pathstartpoint);
-            mslist.Reverse();
-
-            for (int i = 0; i < mslist.Count; ++i)
-            {
-                resault = mslist[i].CalculateWeightsFast(pathstartpoint);
-                if (resault != new Vector3(-1, -1, -1))
-                {
-                    endchunk = mslist[i];
-                    break;
-                }
-            }
-        }
-        outpath = CalculatePoint(endchunk, endchunk.walkpoints[resault], thispathendpoint);
-        return outpath;
-    }
     public List<Vector3> CalculateNeoPathOld() 
     {
         List<Vector3> outpath = new List<Vector3>();
@@ -477,7 +312,8 @@ public class Generator : NetworkBehaviour
         List<Vector3> outpath = new List<Vector3>();
         TurboMarching origin=null;
         for (int i = 0; i < manager.turboMarchings.Length; ++i) {
-            if (FastDist(manager.turboMarchings[i].center, pathstartpoint, 25)) 
+            //if (FastDist(manager.turboMarchings[i].center, pathstartpoint, 25)) 
+            if (IsChunkContainPoint(manager.turboMarchings[i],pathstartpoint)) 
             {
                 origin = manager.turboMarchings[i];
             }
@@ -516,17 +352,28 @@ public class Generator : NetworkBehaviour
             {
                 print("ыыыыЫЫЫЫ!!!");
                     Vector3 orgn = pathendpoint;
-                    for (int i = 0; i < chain.Count-1; ++i) 
+                    if (chain.Count > 1)
                     {
-                        chain[i].SetNavigation(GetClosestPoint(chain[i], chain[i + 1]));
-                        outpath.AddRange(chain[i].GetPath(orgn));
-                        orgn = GetClosestPoint(chain[i], chain[i + 1]);
+                        for (int i = 0; i < chain.Count - 1; ++i)
+                        {
+                            chain[i].SetNavigation(GetClosestPoint(chain[i], chain[i + 1]),orgn);
+                            outpath.AddRange(chain[i].GetPath(orgn));
+                            orgn = GetClosestPoint(chain[i], chain[i + 1]);
+                        }
+                        chain[chain.Count-1].SetNavigation(pathstartpoint,orgn);
+                        outpath.AddRange(chain[chain.Count - 1].GetPath(orgn));
+                    }
+                    else 
+                    {
+                        chain[0].SetNavigation(pathstartpoint, orgn);
+                        outpath.AddRange(chain[0].GetPath(orgn));
                     }
                 //chain[chain.Count-1].SetNavigation(GetClosestPoint(chain[chain.Count - 1], chain[i + 1]));
                 }
             }
          //   origin.SetNavigation(pathstartpoint);
         }
+        outpath.Reverse();
         return outpath;
     }
     public bool IsChunkContainPoint(TurboMarching ms, Vector3 target) {
@@ -677,35 +524,61 @@ public class Generator : NetworkBehaviour
             pointneighbors = new List<pointneighbor>();
         }
     }
-    public class walkpointneighbors 
+    public struct walkpointneighbors 
     {
-        public int[] arr;
+        public int n0, n1, n2, n3, n4, n5, n6, n7, n8;
         public int this[int index] 
         {
-            get { return arr[index]; }
-            set { arr[index] = value; }
+            get {
+                switch (index) 
+                {
+                    case 0: return n0;
+                    case 1: return n1;
+                    case 2: return n2;
+                    case 3: return n3;
+                    case 4: return n4;
+                    case 5: return n5;
+                    case 6: return n6;
+                    case 7: return n7;
+                    case 8: return n8;
+                }
+                return n0;
+            }
+            set {
+                switch (index) 
+                {
+                    case 0: n0 = value;break;
+                    case 1: n1 = value;break;
+                    case 2: n2 = value;break;
+                    case 3: n3 = value;break;
+                    case 4: n4 = value;break;
+                    case 5: n5 = value;break;
+                    case 6: n6 = value;break;
+                    case 7: n7 = value;break;
+                    case 8: n8 = value;break;
+                }
+            }
         }
         public int Length;
-
-        public walkpointneighbors() 
+        public walkpointneighbors(int size) 
         {
-            arr = new int[26];
+            n0 = -1;
+            n1 = -1;
+            n2 = -1;
+            n3 = -1;
+            n4 = -1;
+            n5 = -1;
+            n6 = -1;
+            n7 = -1;
+            n8 = -1;
             Length = 0;
         }
 
         public void Add(int value) 
         {
-            if (Length > 25) { return; }
-            arr[Length] = value;
+            if (Length > 9) { return; }
+            this[Length] = value;
             ++Length;
-        }
-        public void Optimise() 
-        {
-            int[] bufarr=new int[Length];
-            for (int i = 0; i < Length; ++i) 
-            {
-                bufarr[i] = arr[i];
-            }
         }
     }
     public struct pointneighbor 

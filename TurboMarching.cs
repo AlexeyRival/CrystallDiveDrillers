@@ -8,7 +8,7 @@ public class TurboMarching : MonoBehaviour
     //необходимое
     public MeshFilter filter;
     public MeshCollider collider;
-    public ComputeShader shader, destroyerShader, navShader;
+    public ComputeShader shader, destroyerShader, navShader,frenderShader;
     public int sizeXYZ = 80;
     public float size = 0.05f;
     public float step = 1.25f;
@@ -26,6 +26,7 @@ public class TurboMarching : MonoBehaviour
     ComputeBuffer triCountBuffer;
     ComputeBuffer walkCountBuffer;
     ComputeBuffer connectorsBuffer;
+    ComputeBuffer walkpointsdatas;
 
     //соединения и поиск пути
     public bool cX, cY, cZ;
@@ -317,6 +318,35 @@ public class TurboMarching : MonoBehaviour
         walkpointsBuffer.Dispose();
         connectorsBuffer.Release();
         connectorsBuffer.Dispose();
+
+        //навигация
+        UpdateNav();
+    }
+    public void UpdateNav() 
+    {
+        if (walkpoints.Length == 0) { return; }
+        print("соединение");
+        walkpointneighbors = new Generator.walkpointneighbors[walkpoints.Length];
+
+        walkpointsBuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 4 + sizeof(int));
+        walkpointsdatas = new ComputeBuffer(walkpoints.Length, sizeof(int)*10);
+        walkpointsBuffer.SetData(walkpoints);
+        walkpointsdatas.SetData(walkpointneighbors);
+
+        int numThreadsPerAxis = Mathf.CeilToInt(walkpoints.Length / (float)8);
+        int _kernelindex = frenderShader.FindKernel("Burn");
+
+        frenderShader.SetBuffer(_kernelindex,"points",walkpointsBuffer);
+        frenderShader.SetBuffer(_kernelindex,"pointsdatas",walkpointsdatas);
+
+        frenderShader.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
+
+        walkpointsdatas.GetData(walkpointneighbors);
+
+        walkpointsBuffer.Release();
+        walkpointsBuffer.Dispose();
+        walkpointsdatas.Release();
+        walkpointsdatas.Dispose();
     }
     public void UpdateFriends()
     {
@@ -335,7 +365,59 @@ public class TurboMarching : MonoBehaviour
             //Debug.DrawLine(center, friends[i].center, Color.magenta, 10f);
         }
     }
-    public void SetNavigation(Vector3 startpoint)
+    public void SetNavigation(Vector3 startpoint,Vector3 endpoint)
+    {
+        int minid = -1;
+        int maxid = -1;
+        float min = 9999f;
+        float max=0;
+        float d;
+        for(int i = 0; i < walkpoints.Length; ++i) 
+        {
+            walkpoints[i].weight = 0;
+            d = Vector3.Distance(walkpoints[i].pos+transform.position, startpoint);
+            if (d < min) 
+            {
+                minid = i;
+                min = d;
+            }
+            d = Vector3.Distance(walkpoints[i].pos+transform.position, endpoint);
+            if (d > max) 
+            {
+                maxid = i;
+                max = d;
+            }
+        }
+        
+        if (minid == -1||maxid==-1) { throw new System.Exception("ЧтоВообщеПроисходитException"); }
+
+        walkpoints[minid].weight = 1;
+
+        List<int> buffer = new List<int>();
+        List<int> secondbuffer = new List<int>();
+
+        //for (int i = 0; i < walkpointneighbors[minid].Length; ++i) { buffer.Add(walkpointneighbors[minid][i]); }
+        buffer.Add(minid);
+        int k = 0;
+        while (k < 100) 
+        {
+            ++k;
+            secondbuffer = new List<int>();
+            for (int i = 0; i < buffer.Count; ++i) 
+            {
+                //if (maxid == buffer[i]) { k=101;break; }
+                for (int ii = 0; ii < walkpointneighbors[buffer[i]].Length; ++ii) if(walkpoints[walkpointneighbors[buffer[i]][ii]].weight==0)
+                {
+                    secondbuffer.Add(walkpointneighbors[buffer[i]][ii]);
+                    walkpoints[walkpointneighbors[buffer[i]][ii]].weight = walkpoints[buffer[i]].weight + 1;
+                }
+            }
+            buffer = new List<int>();
+            buffer.AddRange(secondbuffer);
+        }
+
+    }
+    public void SetNavigationOld(Vector3 startpoint)
     {
         int _kernelindex = navShader.FindKernel("Clear");
         ComputeBuffer navbuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 4 + sizeof(int));
@@ -364,45 +446,30 @@ public class TurboMarching : MonoBehaviour
     public List<Vector3> GetPath(Vector3 endpoint)
     {
         List<Vector3> outlist = new List<Vector3>();
-        List<int> buffer = new List<int>();
-        HashSet<int> secondbuffer = new HashSet<int>();
-        walkpointneighbors = new Generator.walkpointneighbors[walkpoints.Length];
         int id=0;
-        for (int i = 0; i < walkpoints.Length; ++i)
+        for(int i=0;i<walkpoints.Length;++i)if (Vector3.Distance(walkpoints[i].pos + transform.position, endpoint) < 1)
         {
-            walkpointneighbors[i] = new Generator.walkpointneighbors();
-            if (Vector3.Distance(walkpoints[i].pos + transform.position, endpoint) < 1)
-            {
-                id = i;
-                break;
-            }
-            for (int ii = 0; ii < walkpoints.Length; ++ii) if (i != ii)
-                {
-                    for (int j = 0; j < neighborsTable.Length; ++j)
-                    {
-                        if (walkpoints[i].pos + neighborsTable[j] == walkpoints[ii].pos)
-                        {
-                            walkpointneighbors[i].Add(ii);
-                            break;
-                        }
-                    }
-                }
-            walkpointneighbors[i].Optimise();
+            id = i;
+                print("присвоено " + walkpoints[i].weight);
+            break;
         }
         List<int> pathchain = GetPathChain(id);
-        for (int i = 0; i < pathchain.Count; ++i) { outlist.Add(walkpoints[pathchain[i]].pos); }
-
+        print("длина цепи:"+pathchain.Count);
+        for (int i = 0; i < pathchain.Count; ++i) { outlist.Add(walkpoints[pathchain[i]].pos+transform.position); }
+        outlist.Reverse();
         return outlist;
     }
     private List<int> GetPathChain(int id) 
     {
         List<int> outchain = new List<int>();
-        if (walkpoints[id].weight == 0) { outchain.Add(id);return outchain; }
+        if (walkpoints[id].weight == 1) { outchain.Add(id);return outchain; }
         for (int i = 0; i < walkpointneighbors[id].Length; ++i) 
         {
             if (walkpoints[walkpointneighbors[id][i]].weight < walkpoints[id].weight) 
             {
-                return GetPathChain(walkpointneighbors[id][i]);
+                outchain = GetPathChain(walkpointneighbors[id][i]);
+                if(id%3==0)outchain.Add(id);
+                return outchain;
             }
         }
         throw new System.Exception("PathNotFoundException, лол");
@@ -423,8 +490,12 @@ public class TurboMarching : MonoBehaviour
                         }*/
             for (int i = 0; i < walkpoints.Length; ++i)
             {
-                Gizmos.color = new Color(walkpoints[i].weight*0.1f,0,1- walkpoints[i].weight*0.1f);
+                Gizmos.color = new Color(walkpoints[i].weight*0.01f,0,1- walkpoints[i].weight*0.01f);
                 Gizmos.DrawCube(new Vector3((walkpoints[i].x  + transform.position.x), (walkpoints[i].y  + transform.position.y), (walkpoints[i].z  + transform.position.z)), one);
+               for (int ii = 0; ii < walkpointneighbors[i].Length; ++ii) if(walkpointneighbors[i][ii]!=-1)
+                {
+                    Debug.DrawLine(walkpoints[i].pos+transform.position,walkpoints[walkpointneighbors[i][ii]].pos + transform.position, Gizmos.color);
+                }
             }
         }
         if (Application.isEditor) if (updateconnectionslocal!=updateconnections) {
@@ -434,8 +505,8 @@ public class TurboMarching : MonoBehaviour
             }
         if (Application.isEditor)
         {
-            bool isSelected = Selection.Contains(gameObject);
-            Gizmos.color = isSelected ? new Color(0.168f, 0.5814968f, 0.93741f, 0.24f) : new Color(0.465f, 0.21978f, 0.1678f, 0.24f);
+          //  bool isSelected = Selection.Contains(gameObject);
+          //  Gizmos.color = isSelected ? new Color(0.168f, 0.5814968f, 0.93741f, 0.24f) : new Color(0.465f, 0.21978f, 0.1678f, 0.24f);
             /*if(cX)Debug.DrawRay(center,new Vector3(-10,0,0),Color.blue);
             if(cY)Debug.DrawRay(center,new Vector3(0,-10,0),Color.blue);
             if(cZ)Debug.DrawRay(center,new Vector3(0,0,-10),Color.blue);*/

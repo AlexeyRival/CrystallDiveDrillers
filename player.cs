@@ -92,7 +92,10 @@ public class player : NetworkBehaviour
     //урон жукам
     public bug.SyncListDamageInfo damageinfos = new bug.SyncListDamageInfo();
 
-    
+    //дела отладочные
+    private float FPS;
+
+
     private GameObject[] allitems;
     [SyncVar]
     public bool isDropToContainer;
@@ -361,6 +364,7 @@ public class player : NetworkBehaviour
         if (isLocalPlayer&&!truestart) { if (GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass != -1) { truestart = true; TrueStart(); } return; }
         if (isLocalPlayer&&!missionMenuController.isMissionMenuOpened)
         {
+            FPS = Mathf.Ceil((FPS*9 + (1f / Time.deltaTime))/10);
             if (!isDead)
             {
                 if (attackcooldown > 0)
@@ -775,7 +779,7 @@ public class player : NetworkBehaviour
     }
     private void OnGUI()
     {
-        //GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), "" + rot);
+     //   GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), FPS + " FPS");
     }
     private void OnCollisionEnter(Collision collision)
     {

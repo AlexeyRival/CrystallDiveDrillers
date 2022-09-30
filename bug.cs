@@ -243,7 +243,8 @@ public class bug : NetworkBehaviour
                                 try
                                 {
                                     //SetPath(generator.GetPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
-                                    SetPath(generator.GetFastPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    SetPath(generator.GetNeoPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    //  SetPath(generator.GetFastPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
                                     if (path.Count == 0) {
                                         //TODO ворует путь у другого жука
                                     }
