@@ -42,6 +42,8 @@ public class Generator : NetworkBehaviour
     //музыка
     public AudioSource music;
     public AudioClip m_endtrack;
+    //public AudioClip failsound;
+    private bool musicPlaying;
 
 
     //UI
@@ -124,7 +126,7 @@ public class Generator : NetworkBehaviour
         if (bufferpath.Count > 0)
         {
             bufferpath.RemoveAt(0);
-            bufferpath.Add(end);
+            //bufferpath.Add(end);
         }
         return bufferpath;
     }
@@ -260,6 +262,7 @@ public class Generator : NetworkBehaviour
 
         targetxp = xp_resource + xp_kills + xp_firstquest + xp_secondquest;
 
+        if (fail) { targetxp = 15; }
 
         endmission.transform.Find("resources").GetComponent<Text>().text=xp_resource+"XP";
         endmission.transform.Find("kills").GetComponent<Text>().text=xp_kills + "XP";
@@ -320,7 +323,6 @@ public class Generator : NetworkBehaviour
         }
         if (origin != null)
         {
-            print("регистрация");
             TurboMarching targetm = null;
             //origin.UpdateFriends();
             for (int i = 0; i < manager.turboMarchings.Length; ++i) { manager.turboMarchings[i].isChecked = false; manager.turboMarchings[i].weight = 0;manager.turboMarchings[i].UpdateFriends(); }
@@ -333,7 +335,7 @@ public class Generator : NetworkBehaviour
                 secondbuffer = new HashSet<TurboMarching>();
                 foreach (var tm in buffer)
                 {
-                    if (IsChunkContainPoint(tm, pathendpoint)) { targetm = tm;print("содержит!"); }
+                    if (IsChunkContainPoint(tm, pathendpoint)) { targetm = tm;}
                     for (int j = 0; j < tm.friends.Count; ++j)
                     {
                         if (tm.friends[j].weight == 0)
@@ -350,23 +352,32 @@ public class Generator : NetworkBehaviour
                 List<TurboMarching> chain = GetChunkChain(targetm, origin);
             if (chain.Count != 0) 
             {
-                print("ыыыыЫЫЫЫ!!!");
                     Vector3 orgn = pathendpoint;
+                    List<Vector3> bufpth = new List<Vector3>();
                     if (chain.Count > 1)
                     {
+
                         for (int i = 0; i < chain.Count - 1; ++i)
                         {
                             chain[i].SetNavigation(GetClosestPoint(chain[i], chain[i + 1]),orgn);
-                            outpath.AddRange(chain[i].GetPath(orgn));
-                            orgn = GetClosestPoint(chain[i], chain[i + 1]);
+                            bufpth = chain[i].GetPath(orgn);
+                           // bufpth.Reverse();
+                            outpath.AddRange(bufpth);
+                            //Debug.DrawLine(orgn,outpath[outpath.Count-1],Color.green,10f);
+                            orgn = outpath[outpath.Count - 1];
+                            //orgn = GetClosestPoint(chain[i], chain[i + 1]);
                         }
-                        chain[chain.Count-1].SetNavigation(pathstartpoint,orgn);
-                        outpath.AddRange(chain[chain.Count - 1].GetPath(orgn));
+                        chain[chain.Count-1].SetNavigation(pathendpoint,orgn);
+                        bufpth = chain[chain.Count-1].GetPath(orgn);
+                    //    bufpth.Reverse();
+                        outpath.AddRange(bufpth);
+                        Debug.DrawLine(orgn, outpath[outpath.Count - 1], Color.cyan, 10f);
                     }
                     else 
                     {
                         chain[0].SetNavigation(pathstartpoint, orgn);
                         outpath.AddRange(chain[0].GetPath(orgn));
+                        outpath.Reverse();
                     }
                 //chain[chain.Count-1].SetNavigation(GetClosestPoint(chain[chain.Count - 1], chain[i + 1]));
                 }
@@ -377,7 +388,7 @@ public class Generator : NetworkBehaviour
         return outpath;
     }
     public bool IsChunkContainPoint(TurboMarching ms, Vector3 target) {
-        return !(target.x < ms.transform.position.x || target.y < ms.transform.position.y || target.z < ms.transform.position.z || target.x > ms.transform.position.x + 10 || target.y > ms.transform.position.y + 10 || target.z > ms.transform.position.z + 10);
+        return !(target.x < ms.transform.position.x || target.y < ms.transform.position.y || target.z < ms.transform.position.z || target.x > ms.transform.position.x + 10 || target.y > ms.transform.position.y + 9.75 || target.z > ms.transform.position.z + 9.75);
     }
     public Vector3 GetClosestPoint(TurboMarching from, TurboMarching to) 
     {
@@ -410,7 +421,7 @@ public class Generator : NetworkBehaviour
                 mslist = GetChunkChain(ms.friends[i], target);
                 if (mslist.Count != 0)
                 {
-                    Debug.DrawLine(ms.center, ms.friends[i].center, new Color(0.7f, 0, 0.9f), 10f);
+                 //   Debug.DrawLine(ms.center, ms.friends[i].center, new Color(0.7f, 0, 0.9f), 10f);
                     mslist.Add(ms);
                     return mslist;
                 }
@@ -515,6 +526,8 @@ public class Generator : NetworkBehaviour
         public Vector3 position;
         public List<Vector3> friends;
         public float weight;
+        public float angle;
+        public float Yangle;
         public bool isBorder;
         public List<pointneighbor> pointneighbors;
         public walkpoint(Vector3 position,bool isBorder) {
@@ -782,8 +795,9 @@ public class Generator : NetworkBehaviour
     public void StartPlatform() {
         startplatfromposition = platform.transform.position;
         int spid = Random.Range(0, startpoints.Count);
-            startpoint = startpoints[spid];
-        mule.transform.position = startpoints[(spid + Random.Range(1, startpoints.Count)) % startpoints.Count];
+            //startpoint = startpoints[spid];
+            startpoint = center+new Vector3(Random.Range(-5f,5f),0,Random.Range(-5f,5f));
+        mule.transform.position = center + new Vector3(Random.Range(-5f,5f),0,Random.Range(-5f,5f));//startpoints[(spid + Random.Range(1, startpoints.Count)) % startpoints.Count];
         RaycastHit hit;
         Physics.Raycast(startpoint, - Vector3.up, out hit, 100);
         Debug.DrawRay(startpoint, - Vector3.up, Color.red, 100f);
@@ -921,6 +935,10 @@ public class Generator : NetworkBehaviour
             UpdateResources();
             if (isFailure)
             {
+                if (!musicPlaying&&platform.transform.position.y<80) { 
+                    PlayOneShot("event:/павшие");
+                    musicPlaying = true;
+                }
                 blackscreen.SetActive(true);
             }
         }
@@ -947,6 +965,9 @@ public class Generator : NetworkBehaviour
         }
         if (deleteitall != deleteitalllocal) {
             UICompleted.SetActive(false);
+            isQuestCompete = false;
+            musicPlaying = true;
+            isQuestCompleteLocal = false;
             CloseMission(isFailure); 
             deleteitalllocal = deleteitall;
             planet.SetActive(true);
@@ -975,9 +996,7 @@ public class Generator : NetworkBehaviour
             UpdateAccountLevel();
         }
         if (targetxp > 0) {
-            if (isFailure) {
-                targetxp = 15;
-            }
+            
             if (targetxp > 40000)
             {
                 player.xp+=500;
@@ -1025,6 +1044,19 @@ public class Generator : NetworkBehaviour
             }
         }
         if (Input.GetKeyDown(KeyCode.F3)) { isShowDebugPathFinding = !isShowDebugPathFinding; }
+
+        if (isStart)
+        {
+            if (!isGeneratingCompleted)
+            {
+                loading.GetComponent<Slider>().value = GetLoadingStatus();
+            }
+            for (int i = 0; i < playersprogress.Length; ++i)
+            {
+                loading.transform.GetChild(1).GetChild(i).GetComponent<Slider>().value = playersprogress[i];
+            }
+
+        }
     }
     private void OnDrawGizmos()
     {
@@ -1061,21 +1093,7 @@ public class Generator : NetworkBehaviour
             Gizmos.DrawCube(pathendpoint, new Vector3(0.5f, 0.5f, 0.5f));
         }
     }
-    private void OnGUI()
-    {
-        if (isStart)
-        {
-            if (!isGeneratingCompleted)
-            {
-                    loading.GetComponent<Slider>().value = GetLoadingStatus();
-            }
-            for (int i = 0; i < playersprogress.Length; ++i)
-            {
-                loading.transform.GetChild(1).GetChild(i).GetComponent<Slider>().value = playersprogress[i];
-            }
-
-        }
-    }
+   
     public enum questtype { 
         Добыча
     }
@@ -1085,5 +1103,20 @@ public class Generator : NetworkBehaviour
     public static bool FastDist(Vector3 a, Vector3 b, float squaredistance)
     {
         return (a - b).sqrMagnitude < squaredistance;
+    }
+    private void PlayOneShot(string eventname)
+    {
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
+    }
+    private void PlayOneShot(string eventname, string paramname, int paramvalue)
+    {
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.setParameterByName(paramname, paramvalue);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
     }
 }

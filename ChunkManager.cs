@@ -12,6 +12,7 @@ public class ChunkManager : MonoBehaviour
     private Vector3[] centers;
     private int[] sizes;
     public bool TURBOMODE;
+    private Dictionary<GameObject,Vector3> objs;
 
     private Generator generator;
 
@@ -49,6 +50,7 @@ public class ChunkManager : MonoBehaviour
         }
         else
         {
+            objs = new Dictionary<GameObject, Vector3>();
             GameObject[] spaces = GameObject.FindGameObjectsWithTag("Chunk");
             turboMarchings = new TurboMarching[spaces.Length];
             centers = new Vector3[spaces.Length];
@@ -96,12 +98,16 @@ public class ChunkManager : MonoBehaviour
                 else 
                 {
                     bool isChanged=false;
-                    for (int i = 0; i < turboMarchings.Length; ++i) 
+                    if (!objs.ContainsKey(destroyers[d]) || Vector3.Distance(objs[destroyers[d]],destroyers[d].transform.position)>destroyers[d].transform.localScale.x*0.25f)
                     {
-                        if (Vector3.Distance(destroyers[d].transform.position, turboMarchings[i].center) < turboMarchings[i].sizeXYZ + destroyers[d].transform.localScale.x) 
+                        if (!objs.ContainsKey(destroyers[d])) { objs.Add(destroyers[d], destroyers[d].transform.position); } else { objs[destroyers[d]] = destroyers[d].transform.position; }
+                        for (int i = 0; i < turboMarchings.Length; ++i)
                         {
-                            turboMarchings[i].CheckUpdate(destroyers[d]);
-                            isChanged = true;
+                            if (Vector3.Distance(destroyers[d].transform.position, turboMarchings[i].center) < turboMarchings[i].sizeXYZ + destroyers[d].transform.localScale.x)
+                            {
+                                turboMarchings[i].CheckUpdate(destroyers[d]);
+                                isChanged = true;
+                            }
                         }
                     }
                     //TODO обновлять!!!!

@@ -126,6 +126,7 @@ public class mule : NetworkBehaviour
         Gizmos.color = new Color(0.67f, 0, 0.54f, 0.67f);
         if (isStartWalking) {
             for (int i = 0; i < path.Count; ++i) {
+                Gizmos.color = new Color(0.67f,Mathf.Sin(1f/path.Count*i),Mathf.Cos(1f/path.Count*i));
                 Gizmos.DrawCube(path[i], new Vector3(0.4f, 0.4f, 0.4f));
             }
             

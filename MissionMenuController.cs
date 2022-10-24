@@ -46,8 +46,15 @@ public class MissionMenuController : MonoBehaviour
     {
         difficultyvalue += d;
         if (difficultyvalue < 0) difficultyvalue = 0;
-        if (difficultyvalue > 4) difficultyvalue = 4;
-        //TODO ВЕРНУТЬ if (difficultyvalue > difficulties.Length-1) difficultyvalue = difficulties.Length-1;
+        if (Input.GetKey(KeyCode.LeftAlt))
+        {
+            //TODO ВЕРНУТЬ
+            if (difficultyvalue > difficulties.Length - 1) difficultyvalue = difficulties.Length - 1;
+        }
+        else
+        {
+            if (difficultyvalue > 4) difficultyvalue = 4;
+        }
         diffmult.text = "+" + difficulties[difficultyvalue].bonus+"%";
         diffname.text = difficulties[difficultyvalue].difname;
         difpic.sprite = difficulties[difficultyvalue].icon;

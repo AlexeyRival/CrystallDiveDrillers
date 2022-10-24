@@ -6,8 +6,8 @@ using UnityEngine.UI;
 
 public class player : NetworkBehaviour
 {
-    public GameObject head,diecamera,slot1,slot10;
-    public GameObject rotator;
+    public GameObject head,firstcamera,diecamera,slot1,slot10;
+    public GameObject rotator, fog;
     public Weapon weapon;
     public AudioSource Audio;
     public AudioClip m_getresource;
@@ -21,7 +21,7 @@ public class player : NetworkBehaviour
     public TextMesh hpobject;
     private Rigidbody rb;
     private Vector3 mousedelta;
-    private float rot;
+    private float rot,yrot;
     private RaycastHit hit;
     public List<Resource> resources;
     public Animator animator;
@@ -38,9 +38,13 @@ public class player : NetworkBehaviour
     private bool truestart = false;
     private customNetworkHUD network;
 
+    //звуки!
+    private float roomsize;
+
     //движение
     private float timerforcam;
     private Vector3 moveVector;
+    private Vector3 oldpos;
 
     //след игрока для жуков
     public GameObject smell;
@@ -67,7 +71,7 @@ public class player : NetworkBehaviour
     public int currentslot=0;
     private int localslot = 0;
     public characterclass[] classes;
-    public GameObject UIobject,UIInventory,UIRevive, crosshair;
+    public GameObject UIobject,UIInventory,UIRevive, crosshair,UIE;
     public Text UIhp,UIshld;
     public Slider hpbar, shldbar, flarebar,grenadebar,compass;
     public Image classpic,UIBlackScreen;
@@ -213,6 +217,7 @@ public class player : NetworkBehaviour
     }
     public void Attack()
     {
+            PlayOneShot("event:/whoosh", "ID", 0);
             Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
             if (hit.transform)
             {
@@ -228,7 +233,9 @@ public class player : NetworkBehaviour
         transform.Rotate(0, Random.Range(-weapon.recoil, weapon.recoil)*2, 0);
         slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
         slot1.transform.Translate(Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range( -weapon.recoil, weapon.recoil)*0.1f, Random.Range(-weapon.recoil, -weapon.recoil*0.4f) * 0.2f);
-        Audio.PlayOneShot(weapon.sound);
+
+        PlayOneShot("event:/weaponfire", "weaponID", weapon.sound);
+
         Destroy(Instantiate(weapon.firesplash, slot1.transform.GetChild(0).transform.position, slot1.transform.GetChild(0).transform.rotation,slot1.transform),0.4f);
         if (Physics.Raycast(head.transform.position, head.transform.forward, out hit, 50)) {
             if (hit.transform.gameObject.CompareTag("Bug"))
@@ -276,7 +283,7 @@ public class player : NetworkBehaviour
             UIInventory.transform.GetChild(i).gameObject.SetActive(resourcesCount[i] > 0);
             if (resourcesCount[i] > 0)
             {
-                UIInventory.transform.GetChild(i).GetChild(3).GetComponent<Text>().text = resourcesCount[i].ToString();
+                UIInventory.transform.GetChild(i).GetChild(3).GetComponent<Text>().text = resourcesCount[i].ToString()+"/"+resources[i].maxInBag;
                 ++activecount;
             }
         }
@@ -347,6 +354,7 @@ public class player : NetworkBehaviour
             UIInventory = UIobject.transform.Find("Inventory").gameObject;
             UIRevive = UIobject.transform.Find("Revive").gameObject;
             crosshair = UIobject.transform.Find("AIM").gameObject;
+            UIE = UIobject.transform.Find("E").gameObject;
     }
     private void OnDestroy()
     {
@@ -391,13 +399,27 @@ public class player : NetworkBehaviour
                 mousedelta.y = Input.GetAxis("Mouse Y");
                 transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
                 rot += mousedelta.x * Time.deltaTime;
-                head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0);
+                if (yrot- mousedelta.y * Time.deltaTime<0.9f&&yrot- mousedelta.y * Time.deltaTime>-0.9f) {
+                    yrot -= mousedelta.y * Time.deltaTime;
+                    head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0); 
+                }
+                
                 timerforcam += Time.deltaTime;
                 ismoving = false;
                 if (Input.GetKey(KeyCode.W)) {
                     ismoving = true;
                     moveVector = new Vector3(moveVector.x, moveVector.y, acceleration * speed * sprint);
                     head.transform.GetChild(0).localPosition = new Vector3(Mathf.Sin(timerforcam * Mathf.PI * 2) * 0.01f*sprint, Mathf.Cos(timerforcam*Mathf.PI * 4) *0.01f * sprint, 0);
+
+                    //ступеньки
+                    if (
+                        Physics.Raycast(transform.position + transform.forward * 0.5f + new Vector3(0, 0.1f, 0), -Vector3.up, out hit, 1f)||
+                        Physics.Raycast(transform.position + transform.forward * 0.5f + new Vector3(0.05f, 0.1f, 0), -Vector3.up, out hit, 1f)||
+                        Physics.Raycast(transform.position + transform.forward * 0.5f + new Vector3(-0.05f, 0.1f, 0), -Vector3.up, out hit, 1f)
+                        )
+                    {
+                        transform.position = transform.position + new Vector3(0, 0.1f, 0);
+                    }
                 }
                 if (Input.GetKey(KeyCode.A))
                 {
@@ -424,7 +446,7 @@ public class player : NetworkBehaviour
                 }
                 else { acceleration = 0; }
                 moveVector = transform.TransformDirection(moveVector);
-                if(moveVector!=new Vector3())rb.velocity = new Vector3(moveVector.x, rb.velocity.y, moveVector.z);
+                if (moveVector != new Vector3()) { rb.velocity = (new Vector3(moveVector.x, rb.velocity.y, moveVector.z)+rb.velocity*(2+(canJump?0:8)))/(3f + (canJump ? 0 : 8)); }
                 moveVector = new Vector3();
                 if (Input.GetKey(KeyCode.RightControl) && Input.GetKey(KeyCode.F6)) {
                             CmdStartMission();
@@ -547,6 +569,13 @@ public class player : NetworkBehaviour
                 if (rot > 1.8f) { rot -= 3.6f; }
                 compass.value = (rot % (3.6f))/(-0.25f*3.6f);//*-(2f/3.65f);
 
+                //UI
+                /*GameObject[] objs = GameObject.FindGameObjectsWithTag("UI");
+                for (int i = 0; i < objs.Length; ++i) 
+                {
+                    objs[i].transform.LookAt(head.transform.position);
+                }*/
+
                 //удаление
                 
                 for (int i = 0; i < damageinfos.Count; ++i) 
@@ -555,6 +584,7 @@ public class player : NetworkBehaviour
                 }/**/
 
                 //взаимодействие
+                UIE.SetActive(seeInteraction);
                 seeInteraction = false;
                 missionselectorinteraction = false;
                 gobackinteraction = false;
@@ -591,17 +621,31 @@ public class player : NetworkBehaviour
                         targetobject = hit.collider.transform.gameObject;
                     }
                 }
-                Physics.Raycast(transform.position, -transform.up, out hit, 6);
-                if (hit.transform)
+                
+                if (Physics.Raycast(transform.position, -transform.up, out hit, 6))
                 {
-                    transform.parent = transform;
+                //    transform.parent = hit.transform;
                 }
+
+                //размеры помещения(для звука)
+                float a = 0;
+                if (Physics.Raycast(transform.position, -transform.up, out hit, 30)) { a += hit.distance; } else { a += 30; }
+                if (Physics.Raycast(transform.position, transform.up, out hit, 30)) { a += hit.distance; } else { a += 30; }
+                if (Physics.Raycast(transform.position, -transform.forward, out hit, 30)) { a += hit.distance; } else { a += 30; }
+                if (Physics.Raycast(transform.position, transform.forward, out hit, 30)) { a += hit.distance; } else { a += 30; }
+                if (Physics.Raycast(transform.position, -transform.right, out hit, 30)) { a += hit.distance; } else { a += 30; }
+                if (Physics.Raycast(transform.position, transform.right, out hit, 30)) { a += hit.distance; } else { a += 30; }
+                a /= 2;
+                roomsize = (roomsize + a) / 2;
+                FMODUnity.RuntimeManager.StudioSystem.setParameterByName("roomsize",roomsize);
 
                 //  if (GameObject.Find("SphereDestroyer(Clone)")) { marchingspace.isChecking = true;  } else { marchingspace.isChecking = false; }
                 magnitude = rb.velocity.y;//rb.velocity.magnitude;
                 if (hp < 0)
                 {
+                    PlayOneShot("event:/ouch", "ID", 0);
                     isDead = true;
+                    firstcamera.SetActive(false);
                     diecamera.SetActive(true);
                     CmdDie();
                 }
@@ -662,6 +706,7 @@ public class player : NetworkBehaviour
                 if (hp == 100)
                 {
                     isDead = false;
+                    firstcamera.SetActive(true);
                     diecamera.SetActive(false);
                 }
                 else {
@@ -710,14 +755,14 @@ public class player : NetworkBehaviour
         }
 
         if (localhp != hp) {
-            
+            if(hp!=99)PlayOneShot("event:/ouch", "ID", 1);
             localhp = hp;
             if (!isLocalPlayer) { hpobject.text = nickname + "\n" + hp; } else { UIhp.text = hp.ToString(); hpbar.value = hp*0.01f; }
         }
         canJump = false;
         canUpJump = false;
         
-        if (Physics.Raycast(transform.position, -transform.up, out hit, 1.5f)) {
+        if (Physics.Raycast(transform.position, -transform.up, out hit, 1.25f)) {
             if (isLocalPlayer) { canJump = true; }
             if (isServer && hit.collider.transform.CompareTag("Chunk")) {
                 thissmell.transform.position = transform.position;//hit.point;
@@ -752,7 +797,8 @@ public class player : NetworkBehaviour
             transform.parent = null;isTeleported = false;isClear = false;
             if (generator.isStart&&isLocalPlayer) { 
                 CmdSetProgress(generator.GetLoadingStatus()); 
-            } 
+            }
+            if (generator.platformstatus == 0) { fog.SetActive(false); } else { fog.SetActive(true); }
         }
         allitems = GameObject.FindGameObjectsWithTag("Item");
         int id;
@@ -767,20 +813,43 @@ public class player : NetworkBehaviour
             }
         }
 
+        //красивость
+        if (Vector3.Distance(oldpos, transform.position)>2.4f&&canJump&&(generator.platformstatus==0||generator.platformstatus==2))
+        {
+            oldpos = transform.position;
+            PlayOneShot("event:/step");
+        }
+
         //классы
         if (characterclass!=-1&&localclass != characterclass) {
             localclass = characterclass;
-            Audio.PlayOneShot(classes[characterclass].greetings);
+            PlayOneShot("event:/greatings", "Parameter 1", characterclass);
             if (isLocalPlayer) {
                 dwarfclass = characterclass;
             }
             speed = classes[characterclass].speed;
         }
     }
-    private void OnGUI()
+    private void PlayOneShot(string eventname) 
+    {
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
+    }
+    private void PlayOneShot(string eventname,string paramname, int paramvalue) 
+    {
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.setParameterByName(paramname, paramvalue);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
+    }
+   private void OnGUI()
     {
      //   GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), FPS + " FPS");
-    }
+        GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), roomsize + " roomsize");
+    } /**/
     private void OnCollisionEnter(Collision collision)
     {
         if (collision.gameObject.CompareTag("Item"))
@@ -791,7 +860,7 @@ public class player : NetworkBehaviour
                 {
                     CmdAddResource(id,1);
                 }
-                Audio.PlayOneShot(m_getresource);
+                PlayOneShot("event:/кристалл_подобран");
                 Destroy(collision.gameObject);
             }
         }

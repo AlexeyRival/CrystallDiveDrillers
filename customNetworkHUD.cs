@@ -20,6 +20,7 @@ public class customNetworkHUD : NetworkManager
     public int accountlvl, accountxp;
     public GameObject classselector, blackscreen;
 
+    private const string version = "p-0 D-1";
     //механизм защиты
     private string requiredpassword, password;
     private bool activated=true;
@@ -34,6 +35,14 @@ public class customNetworkHUD : NetworkManager
     }
     private void Start()
     {
+        if (QualitySettings.GetQualityLevel() > 2) 
+        {
+            FMODUnity.RuntimeManager.CoreSystem.setSoftwareChannels(32); 
+        }
+        else
+        {
+            FMODUnity.RuntimeManager.CoreSystem.setSoftwareChannels(16);
+        }
         startPositions.Add(platformposition);
         try
         {
@@ -114,17 +123,6 @@ public class customNetworkHUD : NetworkManager
     }
     private void OnGUI()
     {
-        if (!activated) {
-            GUI.Box(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f+40, 200, 20), "Код активации:");
-            password = GUI.TextField(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f+60, 200, 20), password);
-            if (GUI.Button(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f + 80, 200, 20), "Активировать"))
-            {
-                if (requiredpassword == password) {
-                    activated = true;
-                }
-            }
-        }
-        else
         if (!connected)
         {
             GUI.Box(new Rect(Screen.width * 0.5f - 125, Screen.height * 0.5f, 50, 20), "IP:");
@@ -153,6 +151,8 @@ public class customNetworkHUD : NetworkManager
                 connected = true;
                 OpenClassSelector();
             }
+            GUI.Box(new Rect(Screen.width - 200, Screen.height - 60, 200, 30), "vk.com/cdd_official");
+            GUI.Box(new Rect(Screen.width - 200, Screen.height - 30, 200, 30), "ver " + version);
             if (GUI.Button(new Rect(0, Screen.height - 20, 120, 20), "Выйти"))
             {
                 Application.Quit();

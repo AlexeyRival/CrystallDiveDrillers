@@ -41,11 +41,12 @@ public class bug : NetworkBehaviour
     public int updatetimer;
     private bool isAttack;
     private GameObject target;
+    private float dt;
     public int maxhp = 100;
     private int localhp = 100;
     private float spawnedtimer;
     private bool isSpawn;
-
+    private int soundtimer;
     private HashSet<int> infos;
     [SyncVar]
     public int hp = 100;
@@ -175,6 +176,7 @@ public class bug : NetworkBehaviour
         if (isServer) {
             SetPath(new List<Vector3>(new Vector3[] { transform.position+ new Vector3(0,spawnedtimer*2,0),transform.position+ new Vector3(Random.Range(-1f,1f),spawnedtimer*2, Random.Range(-1f, 1f)),transform.position+ new Vector3(Random.Range(-1f,1f),spawnedtimer*2, Random.Range(-1f, 1f)), transform.position + new Vector3(0, spawnedtimer * 2, 0) }));
         }
+        soundtimer = 700 + Random.Range(1, 20) * 100;
     }
     void Update()
     {
@@ -183,9 +185,19 @@ public class bug : NetworkBehaviour
         if (isStartWalking) {
             if (currentpoint == path.Count-1) { isStartWalking = false; return; }
             rotator.LookAt(path[currentpoint]);
+            rotator.Rotate(-15,0,0);
             transform.Translate(0, 0, Time.deltaTime * speed);
+            Debug.DrawRay(back.transform.position,-back.transform.forward*2,Color.red);
+            if (Physics.Raycast(back.transform.position, -back.transform.forward, out hit, 1.5f)) 
+            {
+                transform.Translate(0,Time.deltaTime* hit.distance, 0);
+            }
             
         }
+        if (soundtimer == 0) {
+            PlayOneShot("event:/bugsound");
+            soundtimer = 700 + Random.Range(1, 20) * 100;
+        } else { --soundtimer; }
         if (isServer)
         {
             if (isStartWalking)
@@ -194,9 +206,13 @@ public class bug : NetworkBehaviour
                 {
                     ++currentpoint;
                 }
-                if(target)if (Vector3.Distance(target.transform.position, transform.position) < 3)
+                if (target)
                 {
-                    isStartWalking = false;
+                    dt = Vector3.Distance(target.transform.position, transform.position);
+                    if (dt < 3 )//|| (Vector3.Distance(target.transform.position,path[path.Count-1])>dt*0.5f&&dt>20))
+                    {
+                        isStartWalking = false;
+                    } 
                 }
             }
             else
@@ -236,7 +252,7 @@ public class bug : NetworkBehaviour
                     }
                     else
                     {
-                        if (Vector3.Distance(transform.position, target.transform.position) > 3f)
+                        if (Vector3.Distance(transform.position, target.transform.position) > 2.5f)
                         {
                             if (updatetimer == 0)
                             {
@@ -248,13 +264,13 @@ public class bug : NetworkBehaviour
                                     if (path.Count == 0) {
                                         //TODO ворует путь у другого жука
                                     }
-                                    path.Add(path[path.Count - 1] + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f)));
+                                    path.Add(path[path.Count - 1] + new Vector3(Random.Range(-1.5f, 1.5f), 0, Random.Range(-1.5f, 1.5f)));
                                     for (int i = 0; i < path.Count; ++i)
                                     {
                                         path[i] += new Vector3(Random.Range(-0.5f, 0.5f), 0, Random.Range(-0.5f, 0.5f));
                                     }
                                 }
-                                catch { updatetimer = 500 + Random.Range(-100, 100); }
+                                catch { updatetimer = 200 + Random.Range(-100, 100); }
                                 if (Random.Range(0, 4) != 0)
                                 {
                                     State = state.move;
@@ -272,7 +288,7 @@ public class bug : NetworkBehaviour
                         else
                         {
                             rotator.LookAt(target.transform);
-                            if (Random.Range(0, 2) != 0)
+                            if (false)//(Random.Range(0, 2) != 0)
                             {
                                 State = state.bite;
                             }
@@ -405,6 +421,7 @@ public class bug : NetworkBehaviour
                 t_bl = hit.point;
                 s_bl = hit.point;
                 lock_bl = true;
+            //    if (soundtimer % 5 == 0) PlayOneShot("event:/bugstep");
             }
         }
         if (Physics.Raycast(point_br.transform.position, -point_br.transform.up, out hit, dropHeight))
@@ -414,6 +431,7 @@ public class bug : NetworkBehaviour
                 t_br = hit.point;
                 s_br = hit.point;
                 lock_br = true;
+             //   if (soundtimer % 5 == 0) PlayOneShot("event:/bugstep");
             }
         }
         if (Physics.Raycast(point_fl.transform.position, -point_fl.transform.up, out hit, dropHeight))
@@ -423,6 +441,7 @@ public class bug : NetworkBehaviour
                 t_fl = hit.point;
                 s_fl = hit.point;
                 lock_fl = true;
+             //   if (soundtimer % 5 == 0) PlayOneShot("event:/bugstep");
             }
         }
         if (Physics.Raycast(point_fr.transform.position, -point_fr.transform.up, out hit, dropHeight))
@@ -432,6 +451,7 @@ public class bug : NetworkBehaviour
                 t_fr = hit.point;
                 s_fr = hit.point;
                 lock_fr = true;
+             //   if (soundtimer % 5 == 0) PlayOneShot("event:/bugstep");
             }
         }
         if (Physics.Raycast(point_cl.transform.position, -point_cl.transform.up, out hit, dropHeight))
@@ -543,12 +563,28 @@ public class bug : NetworkBehaviour
             DropAll();
         }
     }
+    private void PlayOneShot(string eventname)
+    {
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
+    }
+    private void PlayOneShot(string eventname, string paramname, int paramvalue)
+    {
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.setParameterByName(paramname, paramvalue);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
+    }
     private void OnDrawGizmos()
     {
         if (Application.isPlaying) {
             Gizmos.color = new Color(0.565f,0.018f,0.433f);
             for(int i = 0; i < path.Count; ++i)
             {
+                Gizmos.color = new Color(0.67f, Mathf.Sin(1f / path.Count * i), Mathf.Cos(1f / path.Count * i));
                 Gizmos.DrawCube(path[i], new Vector3(0.2f, 0.2f, 0.2f));
             }
         }

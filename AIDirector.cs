@@ -52,6 +52,12 @@ public class AIDirector : NetworkBehaviour
             SpawnSmallBugs();
         }
     }
+    public void SpawnBigBugs() 
+    {
+        for (int i = 0; i < Random.Range(4, 8); ++i) {
+            SpawnSmallBugs();
+        }
+    }
     public void ResetAll() {
         phase = 0;
         time = 0;
@@ -75,20 +81,28 @@ public class AIDirector : NetworkBehaviour
             {
                 if (Input.GetKeyDown(KeyCode.F1)) { SpawnSmallBugs(); }
                 if (Input.GetKeyDown(KeyCode.F2)) { SpawnMidBugs(); }
+                if (Input.GetKeyDown(KeyCode.F3)) { SpawnBigBugs(); }
                 if (Input.GetKeyDown(KeyCode.F4)) { SpawnOpressor(); }
-                if (Input.GetKeyDown(KeyCode.F11)) { ResetAll(); }
+                if (Input.GetKeyDown(KeyCode.F10)) { ResetAll(); }
+                if (Input.GetKeyDown(KeyCode.F11)) { gameObject.SetActive(false); }
                 if (Input.GetKeyDown(KeyCode.F12)) { debugMode = false; }
             }
             if (moved)
             {
-                time += Time.deltaTime;
-                swarmmeter += Time.deltaTime * 0.05f;
+                time += Time.deltaTime*currentdifficulty.TimerMultiplier;
+                swarmmeter += Time.deltaTime * 0.05f*currentdifficulty.SwarmmeterMultiplier;
                 if (time >= 50&&phase==0) { 
                     if (Random.Range(0, 100) < 30) { SpawnSmallBugs(); time = 0; } else { phase = 1; }
                 }
                 if (time >= 100) { 
                     phase = 0;time = 0;
-                    if (currentdifficulty.OpressorSpawnChance!=0&&Random.Range(0, 100) < currentdifficulty.OpressorSpawnChance + swarmmeter * 0.1f) { SpawnOpressor(); }else
+                    if (currentdifficulty.OpressorSpawnChance!=0&&Random.Range(0, 100) < currentdifficulty.OpressorSpawnChance + swarmmeter * 0.1f) { 
+                        SpawnOpressor();
+                        if (currentdifficulty.OpressorSpawnChance > 90 && Random.Range(0, 100) < 10) { phase = 1;time = 101; }else
+                        if (currentdifficulty.OpressorSpawnChance > 80) { SpawnMidBugs(); }else
+                        if (currentdifficulty.OpressorSpawnChance > 50) { SpawnSmallBugs(); }
+
+                    }else
                     if (Random.Range(0, 100) < 80+swarmmeter) { SpawnMidBugs(); } 
                     
                 }
@@ -102,8 +116,10 @@ public class AIDirector : NetworkBehaviour
             GUI.Box(new Rect(Screen.width * 0.5f - 100, 40, 200, 25), "DEBUG MODE - "+version);
             GUI.Box(new Rect(0, 0, Screen.width / 12 * 1, 40), "F1 - SpawnSmallBugs");
             GUI.Box(new Rect(Screen.width / 12 * 1, 0, Screen.width / 12 * 1, 40), "F2 - SpawnMidBugs");
+            GUI.Box(new Rect(Screen.width / 12 * 2, 0, Screen.width / 12 * 1, 40), "F3 - SpawnBigBugs");
             GUI.Box(new Rect(Screen.width / 12 * 3, 0, Screen.width / 12 * 1, 40), "F4 - SpawnOpressor");
-            GUI.Box(new Rect(Screen.width / 12 * 10, 0, Screen.width / 12 * 1, 40), "F11 - Сбросить всё");
+            GUI.Box(new Rect(Screen.width / 12 * 9, 0, Screen.width / 12 * 1, 40), "F10 - Сбросить всё");
+            GUI.Box(new Rect(Screen.width / 12 * 10, 0, Screen.width / 12 * 1, 40), "F11 - Отключить "+version);
             GUI.Box(new Rect(Screen.width / 12 * 11, 0, Screen.width / 12 * 1, 40), "F12 - Отключить Debug Mode");
             GUI.Box(new Rect(Screen.width - 200, Screen.height * 0.4f, 200, 30), "Время: " + time);
             GUI.Box(new Rect(Screen.width - 200, Screen.height * 0.4f + 30, 200, 30), "Счётчик Роя: " + swarmmeter);

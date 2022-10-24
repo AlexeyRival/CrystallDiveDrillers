@@ -10,7 +10,7 @@ public class Weapon : ScriptableObject
     public int dmg;
     public int ammo;
     public float reloadtime;
-    public AudioClip sound;
+    public int sound;
     public float recoil;
     public GameObject firesplash;
     public GameObject bulletmark;
