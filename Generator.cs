@@ -886,6 +886,8 @@ public class Generator : NetworkBehaviour
                 if (isServer) {
                     StartPlatform();
                 }
+
+                platform.GetComponent<Animation>().Play("двер 2");
                 isStartGenerate = false;//ЕСЛИ ВСЁ СЛОМАЕТСЯ Я ПОДВИНУЛ ВОТ ТУТ
             }
         }
@@ -900,6 +902,7 @@ public class Generator : NetworkBehaviour
                 }
                 else
                 {
+                    platform.GetComponent<Animation>().Play("двер");
                     CmdSetPlarformStatus(2);
                 }
             }
@@ -960,6 +963,7 @@ public class Generator : NetworkBehaviour
                     missiontype.text = currentquest.ToString();
                     missionpic.sprite = missioncontroller.missiontypes[(int)currentquest].icon;
                     missiondifpic.sprite = missioncontroller.difficulties[questdifficulty].icon;
+                    platform.GetComponent<Animation>().Play("двер");
                 }
             }
         }

@@ -65,11 +65,9 @@ public class player : NetworkBehaviour
     private Image shieldpic;
 
     //инвентарь и всё прочее
-    [SyncVar]
+    
     public int characterclass=-1;
-    [SyncVar]
     public int currentslot=0;
-    private int localslot = 0;
     public characterclass[] classes;
     public GameObject UIobject,UIInventory,UIRevive, crosshair,UIE;
     public Text UIhp,UIshld;
@@ -90,7 +88,6 @@ public class player : NetworkBehaviour
     public static List<player> players;
     public static player thisplayer;
     private int updatetimer;
-    private int localclass=-1;
     
 
     //урон жукам
@@ -181,10 +178,37 @@ public class player : NetworkBehaviour
     [Command]
     void CmdSetClass(int characterclass) {
         this.characterclass = characterclass;
+        RpcSetClass(characterclass);
+    }
+    [ClientRpc]
+    void RpcSetClass(int characterclass) {
+        this.characterclass = characterclass;
+        PlayOneShot("event:/greatings", "Parameter 1", characterclass);
+        if (isLocalPlayer)
+        {
+            dwarfclass = characterclass;
+        }
+        speed = classes[characterclass].speed;
     }
     [Command]
     void CmdSetSlot(int slot) {
         currentslot = slot;
+        RpcSetSlot(slot);
+    }
+    [ClientRpc]
+    void RpcSetSlot(int slot) 
+    {
+        currentslot = slot;
+        slot1.SetActive(slot == 1);
+        slot10.SetActive(slot == 0);
+        if (isLocalPlayer)
+        {
+            if (slot == 1)
+            {
+                slot1.transform.Rotate(60, -60, -60);
+            }
+            crosshair.SetActive(slot == 1);
+        }
     }
     [Command]
     void CmdDmg(int dmg) {
@@ -217,7 +241,7 @@ public class player : NetworkBehaviour
     }
     public void Attack()
     {
-            PlayOneShot("event:/whoosh", "ID", 0);
+        CmdMakeSound("event:/whoosh");
             Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
             if (hit.transform)
             {
@@ -225,8 +249,44 @@ public class player : NetworkBehaviour
             }
     }
     [Command]
+    private void CmdMakeSound(string soundname) 
+    {
+        RpcMakeSound(soundname);
+    }
+    [ClientRpc]
+    private void RpcMakeSound(string soundname)
+    {
+        PlayOneShot(soundname);
+    }
+    [Command]
+    private void CmdMakeSoundArg(string soundname, string argname, int argvalue) 
+    {
+        RpcMakeSoundArg(soundname,argname,argvalue);
+    }
+    [ClientRpc]
+    private void RpcMakeSoundArg(string soundname, string argname, int argvalue)
+    {
+        PlayOneShot(soundname, argname, argvalue);
+    }
+    [Command]
     public void CmdAddInfo(NetworkInstanceId netid,int dmg) {
         damageinfos.Add(new bug.damageinfo(netid,Random.Range(int.MinValue,int.MaxValue),Time.realtimeSinceStartup,dmg));
+    }
+    [Command]
+    private void CmdBulletMark(Vector3 point,GameObject trf) 
+    {
+        RpcBulletMark(point,trf);
+    }
+    [ClientRpc]
+    private void RpcBulletMark(Vector3 point,GameObject trf) 
+    {
+        GameObject ob = Instantiate(weapon.bulletmark, point, slot1.transform.GetChild(0).transform.rotation);
+        ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(0, slot1.transform.GetChild(0).transform.position);
+        ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(1, ob.transform.position);
+        ob.transform.Rotate(-90, 0, 0);
+        if(trf)ob.transform.parent = trf.transform;
+        Destroy(ob.transform.GetChild(0).gameObject, 0.5f);
+        Destroy(ob, 3f);
     }
     public void Fire() {
         head.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*2, 0, 0);
@@ -234,7 +294,7 @@ public class player : NetworkBehaviour
         slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
         slot1.transform.Translate(Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range( -weapon.recoil, weapon.recoil)*0.1f, Random.Range(-weapon.recoil, -weapon.recoil*0.4f) * 0.2f);
 
-        PlayOneShot("event:/weaponfire", "weaponID", weapon.sound);
+        CmdMakeSoundArg("event:/weaponfire", "weaponID", weapon.sound);
 
         Destroy(Instantiate(weapon.firesplash, slot1.transform.GetChild(0).transform.position, slot1.transform.GetChild(0).transform.rotation,slot1.transform),0.4f);
         if (Physics.Raycast(head.transform.position, head.transform.forward, out hit, 50)) {
@@ -248,7 +308,7 @@ public class player : NetworkBehaviour
                 
             }
             
-            {
+            {/*
                 GameObject ob = Instantiate(weapon.bulletmark, hit.point, slot1.transform.GetChild(0).transform.rotation);
                 ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(0, slot1.transform.GetChild(0).transform.position);
                 ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(1, ob.transform.position);
@@ -256,6 +316,8 @@ public class player : NetworkBehaviour
                 ob.transform.parent = hit.collider.transform;
                 Destroy(ob.transform.GetChild(0).gameObject,0.5f);
                 Destroy(ob,3f);
+                */
+                CmdBulletMark(hit.point,hit.transform.gameObject);
             }
         }
     }
@@ -739,20 +801,6 @@ public class player : NetworkBehaviour
              
             }
         }
-        if (localslot != currentslot)
-        {
-            localslot = currentslot;
-            slot1.SetActive(localslot == 1);
-            slot10.SetActive(localslot == 0);
-            if (isLocalPlayer)
-            {
-                if (localslot == 1)
-                {
-                    slot1.transform.Rotate(60, -60, -60);
-                }
-                crosshair.SetActive(localslot == 1);
-            }
-        }
 
         if (localhp != hp) {
             if(hp!=99)PlayOneShot("event:/ouch", "ID", 1);
@@ -789,7 +837,7 @@ public class player : NetworkBehaviour
             else { if (isFade) { isFade = false; } }
             transform.parent = generator.platform.transform;
             if (!isTeleported) { 
-                transform.localPosition = new Vector3(Random.Range(-2f,2f),2, Random.Range(-2f, 2f));
+                transform.position = generator.platform.transform.GetChild(Random.Range(0,8)).position;
                 isTeleported = true;
             } 
         }
@@ -820,15 +868,7 @@ public class player : NetworkBehaviour
             PlayOneShot("event:/step");
         }
 
-        //классы
-        if (characterclass!=-1&&localclass != characterclass) {
-            localclass = characterclass;
-            PlayOneShot("event:/greatings", "Parameter 1", characterclass);
-            if (isLocalPlayer) {
-                dwarfclass = characterclass;
-            }
-            speed = classes[characterclass].speed;
-        }
+        //классы убрал
     }
     private void PlayOneShot(string eventname) 
     {

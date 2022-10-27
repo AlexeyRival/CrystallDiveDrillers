@@ -33,7 +33,7 @@ public class MissionMenuController : MonoBehaviour
     }
     public void StepSupply(int d)
     {
-        return;//TODO УБРАТЬ
+        return;//TODO ВЕРНУТЬ
         supplyvalue += d;
         if (supplyvalue < 0) supplyvalue = 0;
         if (supplyvalue > supplylevels.Length-1) supplyvalue = supplylevels.Length-1;

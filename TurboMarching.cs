@@ -5,10 +5,11 @@ using UnityEngine;
 
 public class TurboMarching : MonoBehaviour
 {
+
     //необходимое
     public MeshFilter filter;
     public MeshCollider collider;
-    public ComputeShader shader, destroyerShader, navShader,frenderShader;
+    public ComputeShader shader, destroyerShader, navShader, frenderShader, EnterpriseShader;
     public int sizeXYZ = 80;
     public float size = 0.05f;
     public float step = 1.25f;
@@ -17,6 +18,7 @@ public class TurboMarching : MonoBehaviour
     private Vector4[] space;
     public Walkpoint[] walkpoints;
     private Triangle[] tris;
+    private int[] trisconnections;
     public bool updateconnections;
     private bool updateconnectionslocal;
 
@@ -274,7 +276,7 @@ public class TurboMarching : MonoBehaviour
         // Always create buffers in editor (since buffers are released immediately to prevent memory leak)
         // Otherwise, only create if null or if size has changed
 
-        triangleBuffer = new ComputeBuffer(maxTriangleCount, sizeof(float) * 3 * 3, ComputeBufferType.Append);
+        triangleBuffer = new ComputeBuffer(maxTriangleCount, sizeof(float) * 9+sizeof(int), ComputeBufferType.Append);
         pointsBuffer = new ComputeBuffer(numPoints, sizeof(float) * 4);
         triCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
         walkCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
@@ -336,6 +338,7 @@ public class TurboMarching : MonoBehaviour
         mesh.Clear();
 
         var vertices = new Vector3[numTris * 3];
+        trisconnections = new int[numTris * 3];
         var meshTriangles = new int[numTris * 3];
 
         for (int i = 0; i < numTris; i++)
@@ -344,9 +347,11 @@ public class TurboMarching : MonoBehaviour
             {
                 meshTriangles[i * 3 + j] = i * 3 + j;
                 vertices[i * 3 + j] = tris[i][j];
+                trisconnections[i * 3 + j] = tris[i].pointparent;
             }
         }
         mesh.vertices = vertices;
+        //mesh.color TODO !!!!!!!
         mesh.triangles = meshTriangles;
         mesh.RecalculateTangents();
         mesh.RecalculateNormals();
@@ -364,9 +369,101 @@ public class TurboMarching : MonoBehaviour
         connectorsBuffer.Release();
         connectorsBuffer.Dispose();
 
+        //свет
+        //UpdateLight();
+
         //навигация
         UpdateNav();
     }
+    private const int RAYSNUMBER=128;
+    private void UpdateLight() 
+    {
+        UpdateLight(FindObjectsOfType<Light>());
+    }
+    public void UpdateLight(Light[] lights) 
+    {
+        if (trisconnections.Length == 0) { return; }
+        Color[] trislight = new Color[trisconnections.Length];
+
+        LightWave[] allwaves;
+        List<LightWave> allwayslist = new List<LightWave>();
+        for (int i = 0; i < lights.Length; ++i)
+        {
+            if (lights[i].type == LightType.Point&&Vector3.Distance(center,lights[i].transform.position)<lights[i].range+5)
+            {
+                LightWave[] lightWaves = new LightWave[RAYSNUMBER];
+                for (int l = 0; l < RAYSNUMBER; ++l) 
+                {
+                    lightWaves[l].pos = lights[i].transform.position-transform.position;
+                    lightWaves[l].moveVector = FibSphere(l,RAYSNUMBER,1f);
+                    lightWaves[l].color = lights[i].color;
+                    lightWaves[l].time = lights[i].intensity;
+                    lightWaves[l].maxtime = lights[i].intensity;
+                }
+                allwayslist.AddRange(lightWaves);
+            }
+        }
+        allwaves = allwayslist.ToArray();
+
+        if (allwaves.Length > 0)
+        {
+            int numPoints = sizeXYZ * sizeXYZ * sizeXYZ;
+
+            pointsBuffer = new ComputeBuffer(numPoints, sizeof(float) * 4);
+            pointsBuffer.SetData(space);
+            ComputeBuffer trisconnectionsbuffer = new ComputeBuffer(trisconnections.Length, sizeof(int));
+            trisconnectionsbuffer.SetData(trisconnections);
+            ComputeBuffer trislightbuffer = new ComputeBuffer(trislight.Length, sizeof(float) * 4);
+            trislightbuffer.SetData(trislight);
+            ComputeBuffer wavesbuffer = new ComputeBuffer(allwaves.Length, sizeof(float) * 12);
+            wavesbuffer.SetData(allwaves);
+
+            int numThreadsPerAxis = Mathf.CeilToInt(allwaves.Length / (float)8);
+            //int numVoxelsPerAxis = sizeXYZ - 1;
+            int numThreadsPerAxisY = Mathf.CeilToInt(space.Length / (float)8);
+            int numThreadsPerAxisZ = Mathf.CeilToInt(Mathf.Sqrt(trisconnections.Length) / (float)8);
+            int _kernelindex = EnterpriseShader.FindKernel("Light");
+
+            EnterpriseShader.SetBuffer(_kernelindex,"points",pointsBuffer);
+            EnterpriseShader.SetBuffer(_kernelindex,"connections",trisconnectionsbuffer);
+            EnterpriseShader.SetBuffer(_kernelindex,"light",trislightbuffer);
+            EnterpriseShader.SetBuffer(_kernelindex,"waves",wavesbuffer);
+            EnterpriseShader.SetInt("iteration",0);
+            EnterpriseShader.SetFloat("sqrtlen",Mathf.Sqrt(trisconnections.Length));
+
+            for (int i = 0; i < 10; ++i) 
+            {
+                EnterpriseShader.SetInt("iteration",i);
+                EnterpriseShader.Dispatch(_kernelindex, numThreadsPerAxisY, numThreadsPerAxisZ, numThreadsPerAxisZ);
+            }
+
+            trislightbuffer.GetData(trislight, 0, 0, trislight.Length);
+
+            pointsBuffer.Release();
+            trisconnectionsbuffer.Release();
+            trislightbuffer.Release();
+            wavesbuffer.Release();
+            pointsBuffer.Dispose();
+            trisconnectionsbuffer.Dispose();
+            trislightbuffer.Dispose();
+            wavesbuffer.Dispose();
+            GetComponent<MeshFilter>().mesh.colors = trislight;
+        }
+    }
+    private Vector3 FibSphere(int i, int n, float radius)
+    {
+        var k = i + .5f;
+
+        var phi = Mathf.Acos(1f - 2f * k / n);
+        var theta = Mathf.PI * (1 + Mathf.Sqrt(5)) * k;
+
+        var x = Mathf.Cos(theta) * Mathf.Sin(phi);
+        var y = Mathf.Sin(theta) * Mathf.Sin(phi);
+        var z = Mathf.Cos(phi);
+
+        return new Vector3(x, y, z) * radius;
+    }
+
     public void UpdateNav() 
     {
         if (walkpoints.Length == 0) { return; }
@@ -550,6 +647,7 @@ public class TurboMarching : MonoBehaviour
             }
         if (Application.isEditor)
         {
+            
           //  bool isSelected = Selection.Contains(gameObject);
           //  Gizmos.color = isSelected ? new Color(0.168f, 0.5814968f, 0.93741f, 0.24f) : new Color(0.465f, 0.21978f, 0.1678f, 0.24f);
             /*if(cX)Debug.DrawRay(center,new Vector3(-10,0,0),Color.blue);
@@ -568,7 +666,7 @@ public class TurboMarching : MonoBehaviour
         public Vector3 a;
         public Vector3 b;
         public Vector3 c;
-
+        public int pointparent;
         public Vector3 this[int i]
         {
             get
@@ -596,6 +694,15 @@ public class TurboMarching : MonoBehaviour
         public float x { get { return pos.x; } }
         public float y { get { return pos.y; } }
         public float z { get { return pos.z; } }
+    }
+    public struct LightWave 
+    {
+        #pragma warning disable 649 // disable unassigned variable warning
+        public Vector3 pos;
+        public Vector3 moveVector;
+        public Color color;
+        public float time;
+        public float maxtime;
     }
     public static readonly Vector3[] neighborsTable = {
         new Vector3(-0.5f,-0.5f,-0.5f),

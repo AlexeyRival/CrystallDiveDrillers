@@ -19,6 +19,7 @@ public class customNetworkHUD : NetworkManager
     public int[] dwarfprestige=new int[8];
     public int accountlvl, accountxp;
     public GameObject classselector, blackscreen;
+    public NetworkDiscovery networkDiscovery;
 
     private const string version = "p-0 D-1";
     //механизм защиты
@@ -73,6 +74,7 @@ public class customNetworkHUD : NetworkManager
         System.Array.Reverse(arr);
         requiredpassword = new string(arr);
         print(requiredpassword);
+        networkDiscovery.Initialize();
     }
     public void Save()
     {
@@ -138,10 +140,31 @@ public class customNetworkHUD : NetworkManager
                 connected = true;
                 Save();
                 OpenClassSelector();
+                networkDiscovery.broadcastData = nickname;
+                networkDiscovery.StartAsServer();
             }
             if (GUI.Button(new Rect(Screen.width * 0.5f + 150, Screen.height * 0.5f, 50, 25), "LH")) { address = "127.0.0.1"; }
             if (GUI.Button(new Rect(Screen.width * 0.5f + 200, Screen.height * 0.5f, 50, 25), "RVL")) { address = "26.219.110.5"; }
-            if (GUI.Button(new Rect(Screen.width * 0.5f, Screen.height * 0.5f + 40, 125, 20), "Подключиться"))
+
+            GUI.Box(new Rect(Screen.width * 0.5f - 400, Screen.height * 0.5f, 200, 200), "");
+            if (!networkDiscovery.isClient) 
+            {
+                if (GUI.Button(new Rect(Screen.width * 0.5f - 400, Screen.height * 0.5f - 25, 200, 25), "Искать сервера")) { 
+                    networkDiscovery.StartAsClient(); 
+                }
+            }
+            else 
+            {
+                int i = 0;
+                foreach (var b in networkDiscovery.broadcastsReceived)
+                {
+                    if (GUI.Button(new Rect(Screen.width * 0.5f - 400, Screen.height * 0.5f + i * 25, 200, 25),System.Text.Encoding.Unicode.GetString(b.Value.broadcastData))) { address = b.Value.serverAddress; }
+                              ++i;
+                }
+            }
+            
+
+            if(address!="")if (GUI.Button(new Rect(Screen.width * 0.5f, Screen.height * 0.5f + 40, 125, 20), "Подключиться"))
             {
                 transform.GetChild(0).gameObject.SetActive(false);
                 singleton.networkAddress = address;
@@ -150,6 +173,7 @@ public class customNetworkHUD : NetworkManager
                 Save();
                 connected = true;
                 OpenClassSelector();
+                //networkDiscovery.st();
             }
             GUI.Box(new Rect(Screen.width - 200, Screen.height - 60, 200, 30), "vk.com/cdd_official");
             GUI.Box(new Rect(Screen.width - 200, Screen.height - 30, 200, 30), "ver " + version);
