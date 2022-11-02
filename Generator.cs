@@ -7,12 +7,13 @@ using UnityEngine.Networking;
 public class Generator : NetworkBehaviour
 {
     public customNetworkHUD network;
-    public int sizeX = 2;    
+    public int sizeX = 2;
     public int sizeY = 2;
     public int sizeZ = 2;
     public GameObject platform, planet, hub, blackscreen;
     public GameObject cluster;
     public GameObject mule, mulemarker;
+    public GameObject hiveprefab;
     public ChunkManager manager;
     public static bool isWorking;
     //public Texture3D biomemap;
@@ -47,7 +48,7 @@ public class Generator : NetworkBehaviour
 
 
     //UI
-    public GameObject UI,UIInventory, Currentmission,UICompleted;
+    public GameObject UI, UIInventory, Currentmission, UICompleted;
     public RawImage resourcePic;
     public Image missionpic;
     public Image missiondifpic;
@@ -71,8 +72,8 @@ public class Generator : NetworkBehaviour
     //public List<walkpoint> walkpoints;
     public ComputeShader turbopath;
     public TurboMarching.Walkpoint[] walkpoints;
-    public int walkpointscount=0;
-    public Vector3 pathendpoint,pathstartpoint;
+    public int walkpointscount = 0;
+    public Vector3 pathendpoint, pathstartpoint;
     public List<int> path;
 
     //выбор миссии
@@ -85,12 +86,12 @@ public class Generator : NetworkBehaviour
     private bool deleteitalllocal;
     private Vector3 startplatfromposition;
     [SyncVar]
-    private bool isFailure=false;
-    private bool isQuestCompete,isQuestCompleteLocal;
+    private bool isFailure = false;
+    private bool isQuestCompete, isQuestCompleteLocal;
 
     //дела отладочные
     private bool isShowDebugPathFinding;
-    
+
     //сеть
     [SyncVar]
     public SyncListInt resourcesCount;
@@ -110,6 +111,7 @@ public class Generator : NetworkBehaviour
     public void CmdSetFailure(bool value) {
         isFailure = value;
     }
+    
     public void CmdMoveMuleMarker(Vector3 newpos) {
         mulemarker.transform.position = newpos;
         //pathendpoint = mule.transform.position;//newpos;//
@@ -149,6 +151,21 @@ public class Generator : NetworkBehaviour
         {
             resourcesCount[i] = 0;
         }
+    }
+    [Command]
+    public void CmdSpawnHives() 
+    {
+        
+        
+            for (int i = 0; i < cavepoints.Count - 1; ++i)if(i<questparam)
+            {
+                {
+                    Vector3 vec = new Vector3(Random.Range(-3f, 3f), Random.Range(-8f, -5f), Random.Range(-3f, 3f));
+                    NetworkServer.Spawn(Instantiate(hiveprefab, cavepoints[i] + vec, Quaternion.Euler(0, Random.Range(0, 360), 0), manager.chunks[0].transform));
+
+                }
+            }
+        
     }
     public void AddResource(int id, int amout) {
         if(platformstatus==2)CmdAddResource(id, amout);
@@ -227,7 +244,8 @@ public class Generator : NetworkBehaviour
         Currentmission.transform.Find("Type Pic").GetComponent<Image>().sprite = missioncontroller.missiontypes[(int)currentquest].icon;
         Currentmission.transform.Find("Difficulty Pic").GetComponent<Image>().sprite = missioncontroller.difficulties[questdifficulty].icon;
         
-        if (currentquest == questtype.Добыча) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = resources[questtarget].materialName + " - " + resourcesCount[questtarget] + "/" + questparam; }
+        if (currentquest == questtype.Добыча||currentquest == questtype.Поиск) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = resources[questtarget].materialName + " - " + resourcesCount[questtarget] + "/" + questparam; }else
+        if (currentquest == questtype.Подавление) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = "Ульев сломано " + (questparam-GameObject.FindGameObjectsWithTag("Hive").Length) + "/" + questparam; }
     }
     private void CloseMission(bool fail) {
         targetxp = 0;
@@ -235,17 +253,29 @@ public class Generator : NetworkBehaviour
         int xp_kills = 0;
         int xp_firstquest = 0;
         int xp_secondquest = 0;
+        
         for (int i = 0; i < resourcesCount.Count; ++i) {
             xp_resource += resourcesCount[i];
         }
+        xp_kills += player.thisplayer.kills;
+
         if (currentquest == questtype.Добыча) {
             xp_resource += resourcesCount[questtarget]*2;
             if (resourcesCount[questtarget] >= questparam) {
                 xp_firstquest = 2500;
             }
+        }else
+        if (currentquest == questtype.Поиск) {
+            xp_resource += resourcesCount[questtarget]*5;
+            if (resourcesCount[questtarget] >= questparam) {
+                xp_firstquest = 3000;
+            }
+        }else
+        if (currentquest == questtype.Подавление) {
+            xp_kills *= 5;
+            if(!fail)xp_firstquest = 3000;
         }
 
-        xp_kills += player.thisplayer.kills;
 
         xp_resource = (int)(xp_resource*missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
         xp_kills= (int)(xp_kills * missioncontroller.difficulties[questdifficulty].bonus * 0.01f);
@@ -623,11 +653,21 @@ public class Generator : NetworkBehaviour
         }
         Random.seed = seed;
         funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
-        currentquest = (questtype)Random.Range(0, 1);
+        currentquest = (questtype)Random.Range(0, 3);
         if (currentquest == questtype.Добыча)
         {
-            questtarget = Random.Range(0, resources.Count);
+            questtarget = Random.Range(0, 4);
             questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
+        }
+        else if (currentquest == questtype.Поиск)
+        {
+            questtarget = 4;
+            questparam = Random.Range(2, 5) * 5;
+        }
+        else if (currentquest == questtype.Подавление)
+        {
+            questtarget = 4;
+            questparam = Random.Range(2, 4);
         }
         center = new Vector3((sizeX) * 58.5f / 2, (sizeY) * 58.5f / 2, (sizeZ) * 58.5f / 2);
         print(center);
@@ -698,7 +738,11 @@ public class Generator : NetworkBehaviour
         yield return GenerateClusters();
         yield return GenerateOres();
         yield return new WaitForEndOfFrame();
-        if(isServer)UpdateWalkGroup();
+        if (isServer)
+        {
+            UpdateWalkGroup();
+            if (currentquest == questtype.Подавление) CmdSpawnHives();
+        }
         generatingphase = 1;
     //    if(isServer) yield return CalculateFriends();
         isGeneratingCompleted = true;
@@ -746,6 +790,23 @@ public class Generator : NetworkBehaviour
                     
                 }
         }
+        if (currentquest == questtype.Поиск) 
+        {
+            for (int i = 0; i < cavepoints.Count - 1;++i) 
+            {
+                int id = 4;
+                    {
+                        Vector3 vec = new Vector3(Random.Range(-3f, 3f), Random.Range(-8f, -5f), Random.Range(-3f, 3f));
+                        for (int ix = -resources[id].brushRadius; ix < resources[id].brushRadius; ++ix) for (int iy = -resources[id].brushRadius; iy < resources[id].brushRadius; ++iy) for (int iz = -resources[id].brushRadius; iz < resources[id].brushRadius; ++iz)
+                                {
+                                    biomearray[(int)(cavepoints[i].x + vec.x + ix) + (int)(cavepoints[i].y + vec.y + iy) * biomemap.width + (int)(cavepoints[i].z + vec.z + iz) * biomemap.height * biomemap.depth] = resources[id].color * ((resources[id].brushRadius * 3 - (Mathf.Abs(ix) + Mathf.Abs(iy) + Mathf.Abs(iz))) / (resources[id].brushRadius * 2));
+                                }
+                        Instantiate(resources[id].orePrefab, cavepoints[i] + vec, Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)), manager.chunks[0].transform).name = "" + resources[id].id;
+
+                    }
+            }
+        }
+        
         for (int i = 0; i < 500; ++i) {
             biomearray[Random.Range(0, biomearray.Length)] = new Color(Random.Range(0f,1f),Random.Range(0f,1f),Random.Range(0f,1f));
         }
@@ -833,9 +894,13 @@ public class Generator : NetworkBehaviour
     }
     public bool GetQuestStatus()
     {
-        if (currentquest == questtype.Добыча)
+        if (currentquest == questtype.Добыча||currentquest == questtype.Поиск)
         {
-            if (resourcesCount[questtarget] >= questparam) { return true; }
+            return resourcesCount[questtarget] >= questparam;
+        }
+        if (currentquest == questtype.Подавление) 
+        {
+            return GameObject.FindGameObjectsWithTag("Hive").Length==0;
         }
         return false;
     }
@@ -952,13 +1017,25 @@ public class Generator : NetworkBehaviour
                     localseed = seed;
                     Random.seed = seed;
                     funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
-                    currentquest = (questtype)Random.Range(0, 1);
+                    currentquest = (questtype)Random.Range(0, 3);
                     if (currentquest == questtype.Добыча)
                     {
                         questtarget = Random.Range(0, resources.Count);
                         questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
+                        resourcePic.texture = resources[questtarget].icon;
                     }
-                    resourcePic.texture = resources[questtarget].icon;
+                    else if (currentquest == questtype.Поиск)
+                    {
+                        questtarget = 4;
+                        questparam = Random.Range(2, 5) * 5;
+                        resourcePic.texture = resources[questtarget].icon;
+                    }
+                    else if (currentquest == questtype.Подавление)
+                    {
+                        questtarget = 0;
+                        questparam = Random.Range(2, 4);
+                        resourcePic.texture = missioncontroller.missiontypes[(int)currentquest].icon.texture;
+                    }
                     missionName.text = funnyname;
                     missiontype.text = currentquest.ToString();
                     missionpic.sprite = missioncontroller.missiontypes[(int)currentquest].icon;
@@ -1099,7 +1176,9 @@ public class Generator : NetworkBehaviour
     }
    
     public enum questtype { 
-        Добыча
+        Добыча,
+        Поиск,
+        Подавление
     }
     public static readonly string[] funnyA = { "Зов", "Ужас", "Крик", "Поиск", "Защита","Предвосхищение","Ожидание","Стремление" };
     public static readonly string[] funnyB = { "Ужаса", "Вечности", "Пустоты", "Отчаяния", "Риска", "Власти","Наживы","Удачи","Восторга","Жизни" };

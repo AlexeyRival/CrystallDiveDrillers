@@ -180,19 +180,21 @@ public class bug : NetworkBehaviour
     }
     void Update()
     {
+
         //if (!isSpawn) { if (spawnedtimer > 0f) { spawnedtimer -= Time.deltaTime; transform.Translate(0, 0, Time.deltaTime*2); return; } else { isSpawn = true;transform.Rotate(90, 0, 0); } }
         transform.rotation = Quaternion.Lerp(transform.rotation, rotator.rotation, 3f * Time.deltaTime);//2
         if (isStartWalking) {
             if (currentpoint == path.Count-1) { isStartWalking = false; return; }
-            rotator.LookAt(path[currentpoint]);
-            rotator.Rotate(-15,0,0);
-            transform.Translate(0, 0, Time.deltaTime * speed);
-            Debug.DrawRay(back.transform.position,-back.transform.forward*2,Color.red);
-            if (Physics.Raycast(back.transform.position, -back.transform.forward, out hit, 1.5f)) 
-            {
-                transform.Translate(0,Time.deltaTime* hit.distance, 0);
-            }
             
+            //transform.Translate(0, -Time.deltaTime * scale, 0);
+            rotator.LookAt(path[currentpoint]);
+            //rotator.Rotate(-20,0,0);
+            
+            transform.Translate(0, 0, Time.deltaTime * speed);
+            {
+                transform.Translate(0,Time.deltaTime*scale, 0);
+            }
+
         }
         if (soundtimer == 0) {
             PlayOneShot("event:/bugsound");
@@ -202,7 +204,7 @@ public class bug : NetworkBehaviour
         {
             if (isStartWalking)
             {
-                if (Vector3.Distance(transform.position, path[currentpoint]) < 1f)
+                if (Vector3.Distance(transform.position, path[currentpoint]) < 1f*scale)
                 {
                     ++currentpoint;
                 }
@@ -608,6 +610,24 @@ public class bug : NetworkBehaviour
             Destroy(Instantiate(hitsphere, collision.contacts[0].point, transform.rotation), 1f);
         }
     }
+
+    private void OnTriggerEnter(Collider collision)
+    {
+        if (isServer)
+        {
+            if (collision.gameObject.name=="Fire(Clone)")
+            {
+                Dmg(1, collision.gameObject);
+                CmdDmg(1);
+                if (hp - 1 < 0) { ++player.thisplayer.kills; }
+            }
+        }
+        if (collision.gameObject.name == "Fire(Clone)")
+        {
+            Destroy(Instantiate(hitsphere, collision.transform.position, transform.rotation), 1f);
+        }
+    }
+
     public enum state {
         none,
         move,

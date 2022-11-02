@@ -12,6 +12,12 @@ public class Weapon : ScriptableObject
     public float reloadtime;
     public int sound;
     public float recoil;
+    public bool haveRotor;
+    public bool haveScope;
+    public bool haveProjectile;
+    public GameObject projectile;
+    public float projectilespeed;
+    public int firespershoot;
     public GameObject firesplash;
     public GameObject bulletmark;
 }

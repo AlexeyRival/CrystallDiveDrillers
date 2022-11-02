@@ -8,7 +8,13 @@ public class player : NetworkBehaviour
 {
     public GameObject head,firstcamera,diecamera,slot1,slot10;
     public GameObject rotator, fog;
+    public Camera cam;
+
+    //оружие
+    public Weapon[] weapons;
     public Weapon weapon;
+
+
     public AudioSource Audio;
     public AudioClip m_getresource;
     public float speed = 75f;
@@ -17,7 +23,8 @@ public class player : NetworkBehaviour
     private bool ismoving;
     private bool canJump;
     private bool canUpJump;
-    public GameObject sphereDestroyer,flare,grenade;
+    public GameObject sphereDestroyer, flare;
+    public GameObject[] grenades;
     public TextMesh hpobject;
     private Rigidbody rb;
     private Vector3 mousedelta;
@@ -58,6 +65,7 @@ public class player : NetworkBehaviour
 
     //оружие
     private float grenadecooldown=0;
+    private bool scopeTrg = false;
 
     //щиты
     private int shield=100;
@@ -69,7 +77,7 @@ public class player : NetworkBehaviour
     public int characterclass=-1;
     public int currentslot=0;
     public characterclass[] classes;
-    public GameObject UIobject,UIInventory,UIRevive, crosshair,UIE;
+    public GameObject UIobject,UIInventory,UIRevive, crosshair,sniperscope,UIE,UIscaner;
     public Text UIhp,UIshld;
     public Slider hpbar, shldbar, flarebar,grenadebar,compass;
     public Image classpic,UIBlackScreen;
@@ -145,9 +153,17 @@ public class player : NetworkBehaviour
     }
     [Command]
     void CmdSpawnGrenade() {
-        GameObject ob= Instantiate(grenade, head.transform.position, head.transform.rotation);
+        GameObject ob= Instantiate(grenades[characterclass], head.transform.position, head.transform.rotation);
         ob.transform.Translate(0,0,1);
         ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20,ForceMode.Impulse);
+        Destroy(ob, 30f);
+        NetworkServer.Spawn(ob);
+    }
+    [Command]
+    void CmdSpawnProjectile() {
+        GameObject ob= Instantiate(weapon.projectile, head.transform.position, head.transform.rotation);
+        ob.transform.Translate(0,0,1);
+        ob.GetComponent<Rigidbody>().AddRelativeForce(0,0,20*weapon.projectilespeed,ForceMode.Impulse);
         Destroy(ob, 30f);
         NetworkServer.Spawn(ob);
     }
@@ -179,6 +195,7 @@ public class player : NetworkBehaviour
     void CmdSetClass(int characterclass) {
         this.characterclass = characterclass;
         RpcSetClass(characterclass);
+        CmdSetSlot(0);
     }
     [ClientRpc]
     void RpcSetClass(int characterclass) {
@@ -188,6 +205,7 @@ public class player : NetworkBehaviour
         {
             dwarfclass = characterclass;
         }
+        weapon = weapons[characterclass];
         speed = classes[characterclass].speed;
     }
     [Command]
@@ -200,6 +218,10 @@ public class player : NetworkBehaviour
     {
         currentslot = slot;
         slot1.SetActive(slot == 1);
+        for (int i = 0; i < 8; ++i) 
+        {
+            slot1.transform.GetChild(i + 1).gameObject.SetActive(i == characterclass);
+        }
         slot10.SetActive(slot == 0);
         if (isLocalPlayer)
         {
@@ -207,7 +229,9 @@ public class player : NetworkBehaviour
             {
                 slot1.transform.Rotate(60, -60, -60);
             }
-            crosshair.SetActive(slot == 1);
+            for (int i = 0; i < 8; ++i) { 
+                crosshair.transform.GetChild(i).gameObject.SetActive(slot == 1&&characterclass==i); 
+            }
         }
     }
     [Command]
@@ -270,18 +294,18 @@ public class player : NetworkBehaviour
     }
     [Command]
     public void CmdAddInfo(NetworkInstanceId netid,int dmg) {
-        damageinfos.Add(new bug.damageinfo(netid,Random.Range(int.MinValue,int.MaxValue),Time.realtimeSinceStartup,dmg));
+        damageinfos.Add(new bug.damageinfo(netid, Random.Range(int.MinValue, int.MaxValue), Time.realtimeSinceStartup, dmg));
     }
     [Command]
-    private void CmdBulletMark(Vector3 point,GameObject trf) 
+    private void CmdBulletMark(Vector3 point,GameObject trf, Vector3 secondpoint) 
     {
-        RpcBulletMark(point,trf);
+        RpcBulletMark(point,trf,secondpoint);
     }
     [ClientRpc]
-    private void RpcBulletMark(Vector3 point,GameObject trf) 
+    private void RpcBulletMark(Vector3 point,GameObject trf,Vector3 secondpoint) 
     {
         GameObject ob = Instantiate(weapon.bulletmark, point, slot1.transform.GetChild(0).transform.rotation);
-        ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(0, slot1.transform.GetChild(0).transform.position);
+        ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(0, secondpoint);
         ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(1, ob.transform.position);
         ob.transform.Rotate(-90, 0, 0);
         if(trf)ob.transform.parent = trf.transform;
@@ -289,25 +313,49 @@ public class player : NetworkBehaviour
         Destroy(ob, 3f);
     }
     public void Fire() {
-        head.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*2, 0, 0);
-        transform.Rotate(0, Random.Range(-weapon.recoil, weapon.recoil)*2, 0);
-        slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil)*9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
-        slot1.transform.Translate(Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range( -weapon.recoil, weapon.recoil)*0.1f, Random.Range(-weapon.recoil, -weapon.recoil*0.4f) * 0.2f);
+        if (weapon.haveRotor) 
+        {
+            slot1.transform.GetChild(characterclass + 1).GetChild(1).Rotate(45,0,0);
+        }
 
         CmdMakeSoundArg("event:/weaponfire", "weaponID", weapon.sound);
 
         Destroy(Instantiate(weapon.firesplash, slot1.transform.GetChild(0).transform.position, slot1.transform.GetChild(0).transform.rotation,slot1.transform),0.4f);
-        if (Physics.Raycast(head.transform.position, head.transform.forward, out hit, 50)) {
+        if (weapon.haveProjectile) {
+            CmdSpawnProjectile();
+        }
+        else
+        if (Physics.Raycast(head.transform.position, head.transform.forward, out hit, weapon.haveScope?150:50)) {
             if (hit.transform.gameObject.CompareTag("Bug"))
             {
                 //hit.transform.GetComponent<bug>().Dmg(weapon.dmg, hit.collider.gameObject);
-                hit.transform.GetComponent<bug>().Dmg(weapon.dmg, hit.collider.gameObject);
-                CmdAddInfo(hit.transform.GetComponent<NetworkIdentity>().netId,weapon.dmg);
-                crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color - new Color(0,weapon.dmg*0.1f,weapon.dmg*0.1f);
-                crosshair.GetComponent<Image>().color = new Color(1, crosshair.GetComponent<Image>().color.g>0? crosshair.GetComponent<Image>().color.g:0, crosshair.GetComponent<Image>().color.b > 0 ? crosshair.GetComponent<Image>().color.b : 0);
                 
+                    hit.transform.GetComponent<bug>().Dmg(weapon.dmg, hit.collider.gameObject);
+                    CmdAddInfo(hit.transform.GetComponent<NetworkIdentity>().netId, weapon.dmg);
+                
+                crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = crosshair.transform.GetChild(characterclass).GetComponent<Image>().color - new Color(0,weapon.dmg*0.1f,weapon.dmg*0.1f);
+                crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = new Color(1, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g>0? crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g:0, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b > 0 ? crosshair.GetComponent<Image>().color.b : 0);
+                
+                if (characterclass == 0) 
+                {
+                    GameObject[] bugs = GameObject.FindGameObjectsWithTag("Bug");
+                    int chaincount = Random.Range(4, 7);
+                    for (int i = 0; i < bugs.Length; ++i) if(bugs[i]!=hit.transform.gameObject&&Vector3.Distance(hit.transform.position,bugs[i].transform.position)<10)
+                    {
+                            bugs[i].GetComponent<bug>().Dmg(weapon.dmg/2, bugs[i]);
+                            CmdAddInfo(bugs[i].GetComponent<NetworkIdentity>().netId, weapon.dmg/2);
+                            CmdBulletMark(bugs[i].transform.position, bugs[i], hit.point);
+                            if (chaincount > 0) { --chaincount; } else { break; }
+                        }
+                }
             }
-            
+            if (hit.transform.gameObject.CompareTag("Hive"))
+            {
+                hit.transform.GetComponent<hive>().Dmg(weapon.dmg, hit.collider.gameObject);
+                CmdAddInfo(hit.transform.GetComponent<NetworkIdentity>().netId, weapon.dmg);
+                crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = crosshair.transform.GetChild(characterclass).GetComponent<Image>().color - new Color(0, weapon.dmg * 0.1f, weapon.dmg * 0.1f);
+                crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = new Color(1, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g > 0 ? crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g : 0, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b > 0 ? crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b : 0);
+            }
             {/*
                 GameObject ob = Instantiate(weapon.bulletmark, hit.point, slot1.transform.GetChild(0).transform.rotation);
                 ob.transform.GetChild(0).GetComponent<LineRenderer>().SetPosition(0, slot1.transform.GetChild(0).transform.position);
@@ -317,9 +365,14 @@ public class player : NetworkBehaviour
                 Destroy(ob.transform.GetChild(0).gameObject,0.5f);
                 Destroy(ob,3f);
                 */
-                CmdBulletMark(hit.point,hit.transform.gameObject);
+                CmdBulletMark(hit.point,hit.transform.gameObject, slot1.transform.GetChild(0).transform.position);
             }
         }
+        head.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil) * 2, 0, 0);
+        transform.Rotate(0, Random.Range(-weapon.recoil, weapon.recoil) * 2, 0);
+        slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
+        slot1.transform.Translate(Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range(-weapon.recoil, -weapon.recoil * 0.4f) * 0.2f);
+
     }
     private void AddPlayer(player player,int ix) {
        GameObject ui = Instantiate(UIPlayerPrefab, UIPlayersbase.transform.position, UIPlayersbase.transform.rotation, UIPlayersbase.transform);
@@ -390,6 +443,9 @@ public class player : NetworkBehaviour
         {
             thissmell = Instantiate(smell, transform.position, transform.rotation);
         }
+        for (int i = 0; i < GameObject.FindGameObjectsWithTag("Player").Length;++i) {
+            GameObject.Find("network").GetComponent<customNetworkHUD>().spawnpoints[i].transform.parent.parent.GetComponent<Animation>().Play(); 
+        }
     }
     void TrueStart()
     {
@@ -416,6 +472,8 @@ public class player : NetworkBehaviour
             UIInventory = UIobject.transform.Find("Inventory").gameObject;
             UIRevive = UIobject.transform.Find("Revive").gameObject;
             crosshair = UIobject.transform.Find("AIM").gameObject;
+            sniperscope = UIobject.transform.Find("SniperScope").gameObject;
+            UIscaner = UIobject.transform.Find("Scaner").gameObject;
             UIE = UIobject.transform.Find("E").gameObject;
     }
     private void OnDestroy()
@@ -459,11 +517,11 @@ public class player : NetworkBehaviour
                 isReviving = false;
                 mousedelta.x = Input.GetAxis("Mouse X");
                 mousedelta.y = Input.GetAxis("Mouse Y");
-                transform.Rotate(0, mousedelta.x * Time.deltaTime * 100f, 0);
+                transform.Rotate(0, mousedelta.x * Time.deltaTime * (scopeTrg?20f:100f), 0);
                 rot += mousedelta.x * Time.deltaTime;
                 if (yrot- mousedelta.y * Time.deltaTime<0.9f&&yrot- mousedelta.y * Time.deltaTime>-0.9f) {
-                    yrot -= mousedelta.y * Time.deltaTime;
-                    head.transform.Rotate(-mousedelta.y * Time.deltaTime * 100f, 0, 0); 
+                    yrot -= mousedelta.y * Time.deltaTime * (scopeTrg ? 0.2f : 1f);
+                    head.transform.Rotate(-mousedelta.y * Time.deltaTime * (scopeTrg?20f:100f), 0, 0); 
                 }
                 
                 timerforcam += Time.deltaTime;
@@ -525,6 +583,7 @@ public class player : NetworkBehaviour
                                 CmdIsDrop(true);
                                 generator.AddResource(i, 1);
                                 containercooldown = 0.1f;
+                                PlayOneShot("event:/высыпание");
                                 break;
                             }
                         }
@@ -563,6 +622,7 @@ public class player : NetworkBehaviour
                 //инвентарь
                 if (Input.GetKeyDown(KeyCode.Q)) {
                     CmdSetSlot(currentslot==0?1:0);
+                    scopeTrg = false;
                 }
                 if (Input.GetKeyDown(KeyCode.Alpha1)) {
                     CmdSetSlot(1);
@@ -592,10 +652,14 @@ public class player : NetworkBehaviour
                         else
                         {
                             attackcooldown = 1f / weapon.firerate;
-                            Fire();
+                            for(int i=0;i<weapon.firespershoot;++i)Fire();
                         }
                     }
 
+                }
+                if (Input.GetKeyDown(KeyCode.Mouse1)&&slot1.active) 
+                {
+                    if (weapon.haveScope) { scopeTrg = !scopeTrg; }
                 }
                 if (Input.GetKeyDown(KeyCode.F))
                 {
@@ -626,17 +690,33 @@ public class player : NetworkBehaviour
                 slot1.transform.Rotate(mousedelta.y * Time.deltaTime * 15, -mousedelta.x * Time.deltaTime*15, -mousedelta.y * Time.deltaTime * 15+mousedelta.x*Time.deltaTime*15);
                 slot1.transform.rotation = Quaternion.Slerp(slot1.transform.rotation, rotator.transform.rotation,3f*Time.deltaTime);
                 slot1.transform.position = Vector3.Slerp(slot1.transform.position, rotator.transform.position, 3f * Time.deltaTime);
-                if (crosshair.GetComponent<Image>().color.b < 1f) { crosshair.GetComponent<Image>().color = crosshair.GetComponent<Image>().color + new Color(0, Time.deltaTime*3, Time.deltaTime * 3); }
+                if(characterclass!=-1)if (crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b < 1f) { crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = crosshair.transform.GetChild(characterclass).GetComponent<Image>().color + new Color(0, Time.deltaTime*3, Time.deltaTime * 3); }
                 if (rot < -1.8f) { rot += 3.6f; }
                 if (rot > 1.8f) { rot -= 3.6f; }
                 compass.value = (rot % (3.6f))/(-0.25f*3.6f);//*-(2f/3.65f);
+                if (weapon.haveRotor) 
+                {
+                    slot1.transform.GetChild(characterclass + 1).GetChild(0).rotation = Quaternion.Slerp(slot1.transform.GetChild(characterclass + 1).GetChild(0).rotation, slot1.transform.GetChild(characterclass + 1).GetChild(1).rotation, Time.deltaTime*10f);
+                }
+                if (slot1.active)
+                {
+                    sniperscope.SetActive(scopeTrg);
+                    if (scopeTrg)
+                    {
+                        cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, 10, Time.deltaTime * 6);
+                    }
+                    else
+                    {
+                        cam.fieldOfView = Mathf.Lerp(cam.fieldOfView, 60, Time.deltaTime * 6);
+                    }
+                }
 
                 //UI
-                /*GameObject[] objs = GameObject.FindGameObjectsWithTag("UI");
+                GameObject[] objs = GameObject.FindGameObjectsWithTag("UI");
                 for (int i = 0; i < objs.Length; ++i) 
                 {
                     objs[i].transform.LookAt(head.transform.position);
-                }*/
+                }/**/
 
                 //удаление
                 
@@ -744,6 +824,23 @@ public class player : NetworkBehaviour
                     for (int i = 0; i < players.Count; ++i) {
                         UpdatePlayer(players[i]);
                     }
+                    if (characterclass==4&&GameObject.FindGameObjectWithTag("Hive"))
+                    {
+                        UIscaner.SetActive(true);
+                        float min = 999f;
+                        for (int i = 0; i < GameObject.FindGameObjectsWithTag("Hive").Length; ++i)
+                        {
+                            if (Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Hive")[i].transform.position) < min)
+                            {
+                                min = Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Hive")[i].transform.position);
+                            }
+                        }
+                        UIscaner.GetComponent<Animator>().speed = 1f+(20/min);
+                    }
+                    else
+                    {
+                        UIscaner.SetActive(false);
+                    }
                     updatetimer = 300;
                 }
                 else { --updatetimer; }
@@ -793,17 +890,9 @@ public class player : NetworkBehaviour
                 }
             }
         }
-        else 
-        {
-            //TODO следы от выстрелов. придумать!
-            for (int i = 0; i < damageinfos.Count; ++i)
-            {
-             
-            }
-        }
 
         if (localhp != hp) {
-            if(hp!=99)PlayOneShot("event:/ouch", "ID", 1);
+            if(hp!=99&&hp<=localhp)PlayOneShot("event:/ouch", "ID", 1);
             localhp = hp;
             if (!isLocalPlayer) { hpobject.text = nickname + "\n" + hp; } else { UIhp.text = hp.ToString(); hpbar.value = hp*0.01f; }
         }

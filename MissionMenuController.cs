@@ -71,11 +71,21 @@ public class MissionMenuController : MonoBehaviour
         {
             Random.seed = seedlist[i];
             funnyname = Generator.funnyA[Random.Range(0, Generator.funnyA.Length)] + " " + Generator.funnyB[Random.Range(0, Generator.funnyB.Length)];
-            currentquest = (Generator.questtype)Random.Range(0, 1);
+            currentquest = (Generator.questtype)Random.Range(0, 3);
             if (currentquest == Generator.questtype.Добыча)
             {
-                questtarget = Random.Range(0, generator.resources.Count);
+                questtarget = Random.Range(0, 4);
                 questparam = Random.Range(2, 3) * generator.resources[questtarget].maxInBag;//7,10
+            }
+            else if (currentquest == Generator.questtype.Поиск)
+            {
+                questtarget = 4;
+                questparam = Random.Range(2, 5) * 5;
+            }
+            else if (currentquest == Generator.questtype.Подавление)
+            {
+                questtarget = 0;
+                questparam = Random.Range(2, 4);
             }
             missions.Add(new quest(funnyname, currentquest, questtarget, questparam, seedlist[i]));
         }
@@ -95,6 +105,8 @@ public class MissionMenuController : MonoBehaviour
             ob.transform.Find("Mission pic").GetComponent<Image>().sprite = missiontypes[(int)missions[i].questtype].icon;
             ob.transform.Find("Mission Name").GetComponent<Text>().text = missions[i].name;
             if (missions[i].questtype == Generator.questtype.Добыча) { ob.transform.Find("Mission Description").GetComponent<Text>().text = "Добудьте "+missions[i].questparam+" "+generator.resources[missions[i].questtarget].name; }
+            if (missions[i].questtype == Generator.questtype.Поиск) { ob.transform.Find("Mission Description").GetComponent<Text>().text = "Добудьте "+missions[i].questparam+" "+generator.resources[missions[i].questtarget].name; }
+            if (missions[i].questtype == Generator.questtype.Подавление) { ob.transform.Find("Mission Description").GetComponent<Text>().text = "Ликвидируйте "+missions[i].questparam+" улья"; }
 
         }
     }
@@ -105,6 +117,8 @@ public class MissionMenuController : MonoBehaviour
         mispic.sprite = missiontypes[missiontypevalue].icon;
         misname.text = missions[id].name;
             if (missions[id].questtype == Generator.questtype.Добыча) { misdes.text = "Добудьте " + missions[id].questparam + " " + generator.resources[missions[id].questtarget].name; }
+            if (missions[id].questtype == Generator.questtype.Поиск) { misdes.text = "Найдите и добудьте " + missions[id].questparam + " " + generator.resources[missions[id].questtarget].name; }
+            if (missions[id].questtype == Generator.questtype.Подавление) { misdes.text = "Ликвидируйте " + missions[id].questparam + " улья"; }
         
         mismult.text = "+" + missiontypes[missiontypevalue].bonus;
     }

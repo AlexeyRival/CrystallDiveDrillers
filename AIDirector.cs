@@ -58,6 +58,11 @@ public class AIDirector : NetworkBehaviour
             SpawnSmallBugs();
         }
     }
+    public void Scream() 
+    {
+        time = 101f;
+        swarmmeter += 15f*currentdifficulty.SwarmmeterMultiplier;
+    }
     public void ResetAll() {
         phase = 0;
         time = 0;
