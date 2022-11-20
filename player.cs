@@ -7,7 +7,7 @@ using UnityEngine.UI;
 public class player : NetworkBehaviour
 {
     public GameObject head,firstcamera,diecamera,slot1,slot10;
-    public GameObject rotator, fog;
+    public GameObject rotator, fog, supplymarker;
     public Camera cam;
 
     //оружие
@@ -39,11 +39,17 @@ public class player : NetworkBehaviour
     private float flarecooldown = 0;
     private int localhp = 101;
     private float magnitude;
-    private bool seeContainer, seeInteraction,classchangeInteraction, gobackinteraction, missionselectorinteraction;
+    private bool seeContainer, seeInteraction,classchangeInteraction, gobackinteraction, missionselectorinteraction,supplyinteracton;
     private float containercooldown = 0;
+    private int tick;
+    private float tickf;
     private GameObject targetobject;
     private bool truestart = false;
     private customNetworkHUD network;
+
+    //спецеффекты
+    public bool camShake;
+
 
     //звуки!
     private float roomsize;
@@ -65,24 +71,35 @@ public class player : NetworkBehaviour
 
     //оружие
     private float grenadecooldown=0;
+    private int grenadecount;
     private bool scopeTrg = false;
+    private float reloadtimer = 0f;
+    private int ammo, allammo;
+
+    //суплай
+    public GameObject supplyprefab;
+    private NetworkInstanceId supply;
+    private float supplyprogress;
+    private bool isTryingSupply;
 
     //щиты
     private int shield=100;
     private float shieldcooldown;
     private Image shieldpic;
 
-    //инвентарь и всё прочее
+    //инвентарь и всё прочее интерфейсное
     
     public int characterclass=-1;
     public int currentslot=0;
     public characterclass[] classes;
-    public GameObject UIobject,UIInventory,UIRevive, crosshair,sniperscope,UIE,UIscaner;
-    public Text UIhp,UIshld;
-    public Slider hpbar, shldbar, flarebar,grenadebar,compass;
+    public GameObject UIobject, UIInventory, UIRevive, crosshair, sniperscope, UIE, UIscaner, UISupplyCost, UIweapon, UIEscapeMenu;
+    public Text UIhp,UIshld,UIammo,UIgrenadecounter;
+    public Slider hpbar, shldbar, flarebar,grenadebar,compass,supplyprogressbar;
     public Image classpic,UIBlackScreen;
     public GameObject expscreen;
     private bool isFade;
+    private bool isEscape,someEscapeTrigger;
+    private float uiweapontimer;
 
     //уровни и опыт
     public static int level;
@@ -118,9 +135,12 @@ public class player : NetworkBehaviour
 
     [Command]
     void CmdSpawnDestroyer(Vector3 pos) {
-        GameObject ob= Instantiate(sphereDestroyer, pos, Quaternion.identity);
-        Destroy(ob, 0.1f);
-        NetworkServer.Spawn(ob);
+        for (int i = 0; i < 5; ++i)
+        {
+            GameObject ob = Instantiate(sphereDestroyer, pos, Quaternion.identity);
+            Destroy(ob, 0.1f);
+            NetworkServer.Spawn(ob);
+        }
     }
     [Command]
     void CmdMoveMarker(Vector3 pos) {
@@ -130,7 +150,26 @@ public class player : NetworkBehaviour
     void CmdDie() {
         generator.AddDeathPlayer(nickname);
     }
-
+    [Command]
+    public void CmdSpawnSupply(Vector3 position) 
+    {
+        GameObject ob = Instantiate(supplyprefab, new Vector3(position.x, 117, position.z), Quaternion.identity);
+        NetworkServer.Spawn(ob);
+        ob.GetComponent<supply>().SetVector(position);
+        generator.resourcesCount[0] -= 40;
+    }
+    [Command]
+    public void CmdGetSupply(NetworkInstanceId id) 
+    {
+        for (int i = 0; i < FindObjectsOfType<supply>().Length; ++i) 
+        {
+            if (id == FindObjectsOfType<supply>()[i].netId) 
+            {
+                --FindObjectsOfType<supply>()[i].amount;
+                break;
+            }
+        }
+    }
     [Command]
     void CmdAddRevivePoints(string name,float amout) {
         generator.AddRevivePoints(name, amout);
@@ -201,12 +240,18 @@ public class player : NetworkBehaviour
     void RpcSetClass(int characterclass) {
         this.characterclass = characterclass;
         PlayOneShot("event:/greatings", "Parameter 1", characterclass);
+        weapon = weapons[characterclass];
+        ammo = weapon.ammo;
+        allammo = weapon.maxammo;
+        grenadecount = grenades[characterclass].GetComponent<grenade>().maxcount;
+        speed = classes[characterclass].speed;
+
         if (isLocalPlayer)
         {
             dwarfclass = characterclass;
+            UIammo.text = ammo + "/" + allammo;
+            UIgrenadecounter.text = grenadecount + "";
         }
-        weapon = weapons[characterclass];
-        speed = classes[characterclass].speed;
     }
     [Command]
     void CmdSetSlot(int slot) {
@@ -228,6 +273,15 @@ public class player : NetworkBehaviour
             if (slot == 1)
             {
                 slot1.transform.Rotate(60, -60, -60);
+                UIweapon.SetActive(true);
+                uiweapontimer = 3f;
+                UIweapon.transform.GetChild(1).GetComponent<Image>().sprite = weapon.icon;
+                UIweapon.transform.GetChild(2).GetComponent<Text>().text = weapon.weaponname;
+            }
+            else 
+            {
+                UIweapon.SetActive(false);
+                uiweapontimer = 0f;
             }
             for (int i = 0; i < 8; ++i) { 
                 crosshair.transform.GetChild(i).gameObject.SetActive(slot == 1&&characterclass==i); 
@@ -237,6 +291,7 @@ public class player : NetworkBehaviour
     [Command]
     void CmdDmg(int dmg) {
         hp = hp-dmg;
+        if (hp > 100) { hp = 100; }
     }
     [Command]
     void CmdIsDrop(bool isdrop) {
@@ -334,7 +389,7 @@ public class player : NetworkBehaviour
                     CmdAddInfo(hit.transform.GetComponent<NetworkIdentity>().netId, weapon.dmg);
                 
                 crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = crosshair.transform.GetChild(characterclass).GetComponent<Image>().color - new Color(0,weapon.dmg*0.1f,weapon.dmg*0.1f);
-                crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = new Color(1, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g>0? crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g:0, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b > 0 ? crosshair.GetComponent<Image>().color.b : 0);
+                crosshair.transform.GetChild(characterclass).GetComponent<Image>().color = new Color(1, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g>0? crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.g:0, crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b > 0 ? crosshair.transform.GetChild(characterclass).GetComponent<Image>().color.b : 0);
                 
                 if (characterclass == 0) 
                 {
@@ -368,7 +423,10 @@ public class player : NetworkBehaviour
                 CmdBulletMark(hit.point,hit.transform.gameObject, slot1.transform.GetChild(0).transform.position);
             }
         }
-        head.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil) * 2, 0, 0);
+
+        yrot -= Random.Range(-weapon.recoil, weapon.recoil) * 2;
+        yrot = Mathf.Clamp(yrot, -90, 90);
+        head.transform.localRotation = Quaternion.Euler(yrot, 0, 0);
         transform.Rotate(0, Random.Range(-weapon.recoil, weapon.recoil) * 2, 0);
         slot1.transform.Rotate(Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f, Random.Range(-weapon.recoil, weapon.recoil) * 9f);
         slot1.transform.Translate(Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range(-weapon.recoil, weapon.recoil) * 0.1f, Random.Range(-weapon.recoil, -weapon.recoil * 0.4f) * 0.2f);
@@ -388,8 +446,25 @@ public class player : NetworkBehaviour
         {
             ui.transform.Find("HPbar").GetComponent<Slider>().value = player.hp * 0.01f;
             ui.transform.Find("Name").GetComponent<Text>().text = player.nickname;
-            if(player.characterclass!=-1)ui.GetComponent<Image>().sprite = classes[player.characterclass].icon;
+            if (player.characterclass != -1) ui.GetComponent<Image>().sprite = classes[player.characterclass].icon;
         }
+    }
+    private void RemovePlayer(player player) 
+    {
+        GameObject ui = UIPlayersbase.transform.Find(player.netId.ToString()).gameObject;
+        bool minus = false;
+        for (int i = 0; i < UIPlayersbase.transform.childCount; ++i) 
+        {
+            if (minus) 
+            {
+            UIPlayersbase.transform.GetChild(i).transform.Translate(-90, 0, 0);
+            }
+            if (UIPlayersbase.transform.GetChild(i).name==player.netId.ToString()) 
+            {
+                minus = true;
+            }
+        }
+        Destroy(ui);
     }
     private void UpdateResources() {
         int xshift;
@@ -432,6 +507,7 @@ public class player : NetworkBehaviour
         if (players == null) players = new List<player>();
         if (!isLocalPlayer)
         {
+            MissionControlVoice.only.PlayReplica(1);
             AddPlayer(this, players.Count);
             players.Add(this);
         }
@@ -449,48 +525,89 @@ public class player : NetworkBehaviour
     }
     void TrueStart()
     {
-            Cursor.lockState = CursorLockMode.Locked;
-            Cursor.visible = false;
-            network = GameObject.Find("network").GetComponent<customNetworkHUD>();
-            CmdSetNick(network.nickname);
-            CmdSetClass(network.characterclass);
-            CmdDmg(1);
-            hpobject.gameObject.SetActive(false);
-            UIobject = GameObject.Find("Canvas").transform.Find("UI").gameObject;
-            UIobject.SetActive(true);
-            UIhp = UIobject.transform.Find("HeartImage").transform.Find("HPText").GetComponent<Text>();
-            hpbar = UIobject.transform.Find("HeartImage").transform.Find("HealthBorder").GetComponent<Slider>();
-            UIshld = UIobject.transform.Find("ShieldImage").transform.Find("ShieldText").GetComponent<Text>();
-            shldbar = UIobject.transform.Find("ShieldImage").transform.Find("ShieldBorder").GetComponent<Slider>();
-            flarebar = UIobject.transform.Find("Flare").GetComponent<Slider>();
-            compass = UIobject.transform.Find("Compass").GetComponent<Slider>();
-            grenadebar = UIobject.transform.Find("Grenade").GetComponent<Slider>();
-            classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
-            shieldpic = UIobject.transform.Find("Shield").GetComponent<Image>();
-            UIBlackScreen = GameObject.Find("Canvas").transform.Find("Blackscreen").GetComponent<Image>();
-            classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
-            UIInventory = UIobject.transform.Find("Inventory").gameObject;
-            UIRevive = UIobject.transform.Find("Revive").gameObject;
-            crosshair = UIobject.transform.Find("AIM").gameObject;
-            sniperscope = UIobject.transform.Find("SniperScope").gameObject;
-            UIscaner = UIobject.transform.Find("Scaner").gameObject;
-            UIE = UIobject.transform.Find("E").gameObject;
+        Cursor.lockState = CursorLockMode.Locked;
+        Cursor.visible = false;
+        network = GameObject.Find("network").GetComponent<customNetworkHUD>();
+        CmdSetNick(network.nickname);
+        CmdSetClass(network.characterclass);
+        CmdDmg(1);
+        hpobject.gameObject.SetActive(false);
+        UIobject = GameObject.Find("Canvas").transform.Find("UI").gameObject;
+        UIobject.SetActive(true);
+        UIhp = UIobject.transform.Find("HeartImage").transform.Find("HPText").GetComponent<Text>();
+        hpbar = UIobject.transform.Find("HeartImage").transform.Find("HealthBorder").GetComponent<Slider>();
+        UIshld = UIobject.transform.Find("ShieldImage").transform.Find("ShieldText").GetComponent<Text>();
+        shldbar = UIobject.transform.Find("ShieldImage").transform.Find("ShieldBorder").GetComponent<Slider>();
+        flarebar = UIobject.transform.Find("Flare").GetComponent<Slider>();
+        compass = UIobject.transform.Find("Compass").GetComponent<Slider>();
+        supplyprogressbar = UIobject.transform.Find("Supply").GetComponent<Slider>();
+        grenadebar = UIobject.transform.Find("Grenade").GetComponent<Slider>();
+        UIammo = UIobject.transform.Find("Ammo").GetComponent<Text>();
+        UIgrenadecounter = UIobject.transform.Find("GrenadeCounter").GetComponent<Text>();
+        classpic = UIobject.transform.Find("ClassBorder").GetComponent<Image>();
+        shieldpic = UIobject.transform.Find("Shield").GetComponent<Image>();
+        UIBlackScreen = GameObject.Find("Canvas").transform.Find("Blackscreen").GetComponent<Image>();
+        classpic.sprite = classes[GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass].icon;
+        UIInventory = UIobject.transform.Find("Inventory").gameObject;
+        UIRevive = UIobject.transform.Find("Revive").gameObject;
+        crosshair = UIobject.transform.Find("AIM").gameObject;
+        sniperscope = UIobject.transform.Find("SniperScope").gameObject;
+        UIscaner = UIobject.transform.Find("Scaner").gameObject;
+        UIE = UIobject.transform.Find("E").gameObject;
+        UISupplyCost = UIobject.transform.Find("SupplyCost").gameObject;
+        UIweapon = UIobject.transform.Find("Weapon").gameObject;
+        UIEscapeMenu = GameObject.Find("Canvas Menu").transform.Find("Escape_menu").gameObject;
+        UIEscapeMenu.transform.Find("ExitMission").GetComponent<Button>().onClick.AddListener(() => { EscapeMission();isEscape = false;UIEscapeMenu.SetActive(false);Cursor.lockState = CursorLockMode.Locked;Cursor.visible = false; });
+        UIEscapeMenu.transform.Find("ExitGame").GetComponent<Button>().onClick.AddListener(() => { Destroy(gameObject); });
+    }
+    private bool quitting;
+    private void OnApplicationQuit()
+    {
+        quitting = true;
     }
     private void OnDestroy()
     {
-        if (isLocalPlayer) {
-            print("отключилось");
-            //TODO интерфейс отключения
-            //Application.LoadLevel(0);
+        if (!quitting)
+        {
+            if (isLocalPlayer)
+            {
+                print("отключилось");
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+                //TODO интерфейс отключения
+                Application.LoadLevel(0);
+                network.Disconnect();
+            }
+            else 
+            {
+                RemovePlayer(this);
+                players.Remove(this);
+            }
         }
     }
-
+    public void EscapeMission() 
+    {
+        if (isServer) 
+        {
+            generator.GoBackFailure();
+        }
+    }
     // Update is called once per frame
     void Update()
     {
 
         if (isLocalPlayer&&!truestart) { if (GameObject.Find("network").GetComponent<customNetworkHUD>().characterclass != -1) { truestart = true; TrueStart(); } return; }
-        if (isLocalPlayer&&!missionMenuController.isMissionMenuOpened)
+
+        someEscapeTrigger = false;
+        if (isEscape&&Input.GetKeyDown(KeyCode.Escape))
+        {
+            isEscape = false;
+            UIEscapeMenu.SetActive(false);
+            Cursor.lockState = CursorLockMode.Locked;
+            Cursor.visible = false;
+            someEscapeTrigger = true;
+        }
+        if (isLocalPlayer&&!missionMenuController.isMissionMenuOpened&&!isEscape)
         {
             FPS = Mathf.Ceil((FPS*9 + (1f / Time.deltaTime))/10);
             if (!isDead)
@@ -505,10 +622,10 @@ public class player : NetworkBehaviour
                     flarecooldown -= Time.deltaTime;
                     flarebar.value = 1f-flarecooldown*0.25f;
                 }
-                if (grenadecooldown > 0)
+                if (grenadecooldown > 0&&grenadecount>0)
                 {
                     grenadecooldown -= Time.deltaTime;
-                    grenadebar.value = 1f-grenadecooldown*0.25f;
+                    grenadebar.value = 1f-grenadecooldown*0.5f;
                 }
                 if (containercooldown > 0)
                 {
@@ -519,13 +636,13 @@ public class player : NetworkBehaviour
                 mousedelta.y = Input.GetAxis("Mouse Y");
                 transform.Rotate(0, mousedelta.x * Time.deltaTime * (scopeTrg?20f:100f), 0);
                 rot += mousedelta.x * Time.deltaTime;
-                if (yrot- mousedelta.y * Time.deltaTime<0.9f&&yrot- mousedelta.y * Time.deltaTime>-0.9f) {
-                    yrot -= mousedelta.y * Time.deltaTime * (scopeTrg ? 0.2f : 1f);
-                    head.transform.Rotate(-mousedelta.y * Time.deltaTime * (scopeTrg?20f:100f), 0, 0); 
-                }
+                yrot -= mousedelta.y * Time.deltaTime * (scopeTrg ? 20f : 100f);
+                yrot = Mathf.Clamp(yrot, -90, 90);
+                head.transform.localRotation=Quaternion.Euler(yrot,0,0);
                 
                 timerforcam += Time.deltaTime;
                 ismoving = false;
+                if(camShake)head.transform.localPosition = new Vector3(Random.Range(-0.125f, 0.125f), 0.5f+Random.Range(-0.125f, 0.125f), 0);
                 if (Input.GetKey(KeyCode.W)) {
                     ismoving = true;
                     moveVector = new Vector3(moveVector.x, moveVector.y, acceleration * speed * sprint);
@@ -566,7 +683,9 @@ public class player : NetworkBehaviour
                 }
                 else { acceleration = 0; }
                 moveVector = transform.TransformDirection(moveVector);
-                if (moveVector != new Vector3()) { rb.velocity = (new Vector3(moveVector.x, rb.velocity.y, moveVector.z)+rb.velocity*(2+(canJump?0:8)))/(3f + (canJump ? 0 : 8)); }
+                if (moveVector != new Vector3()) { rb.velocity = (new Vector3(moveVector.x * 1.25f, rb.velocity.y, moveVector.z * 1.25f) + rb.velocity * (2 + (canJump ? 0 : 8))) / (3f + (canJump ? 0 : 8)); }
+
+                if (rb.velocity.y==0&&canJump) { rb.drag = 15f; } else { rb.drag = 0.95f; }
                 moveVector = new Vector3();
                 if (Input.GetKey(KeyCode.RightControl) && Input.GetKey(KeyCode.F6)) {
                             CmdStartMission();
@@ -613,6 +732,27 @@ public class player : NetworkBehaviour
                         Cursor.lockState = CursorLockMode.None;
                         Cursor.visible = true;
                     }
+                    if (supplyinteracton) 
+                    {
+                        if (!supplyprogressbar.gameObject.active) 
+                        {
+                            supplyprogressbar.gameObject.SetActive(true);
+                        }
+                        supplyprogress += Time.deltaTime;
+                        supplyprogressbar.value = supplyprogress/4f;
+                        if (supplyprogress >= 4f) { 
+                            supplyprogress = 0f;
+                            PlayOneShot("event:/высыпание");
+                            allammo += weapon.maxammo/2;
+                            grenadecount += grenades[characterclass].GetComponent<grenade>().maxcount / 2;
+                            if (grenadecount > grenades[characterclass].GetComponent<grenade>().maxcount) { grenadecount = grenades[characterclass].GetComponent<grenade>().maxcount; }
+                            CmdDmg(-50);
+                            if (allammo >= weapon.maxammo) { allammo = weapon.maxammo; }
+                            CmdGetSupply(supply);
+                            UIammo.text = ammo + "/" + allammo;
+                            UIgrenadecounter.text = grenadecount+"";
+                        }
+                    }
                 }
                 else
                 {
@@ -630,6 +770,41 @@ public class player : NetworkBehaviour
                 if (Input.GetKeyDown(KeyCode.Alpha0)) {
                     CmdSetSlot(0);
                 }
+                if (Input.GetKeyDown(KeyCode.Alpha4)) 
+                {
+                    isTryingSupply = !isTryingSupply;
+                    supplymarker.SetActive(isTryingSupply);
+                    UISupplyCost.SetActive(isTryingSupply);
+                }
+
+                //перезарядка
+                if (Input.GetKeyDown(KeyCode.R) && reloadtimer <= 0 && allammo > 0)
+                {
+                    if (allammo > 0)
+                    {
+                        reloadtimer = weapon.reloadtime;
+                        if (allammo >= weapon.ammo)
+                        {
+                            allammo += ammo - weapon.ammo;
+                            ammo = weapon.ammo;
+                        }
+                        else 
+                        {
+                            ammo = allammo;
+                            allammo = 0;
+                        }
+                        PlayOneShot("event:/перезарядка", "Parameter 1", weapon.reloadsound);
+                    }
+                }
+                if (reloadtimer > 0) {
+                    rotator.transform.localRotation=Quaternion.Euler(45,0,45);
+                    reloadtimer -= Time.deltaTime;
+                    if (reloadtimer <= 0)
+                    {
+                        UIammo.text = ammo + "/" + allammo;
+                        rotator.transform.localRotation = Quaternion.Euler(0, 0, 0);
+                    }
+                }
 
                 //прыжки
                 if (Input.GetKeyDown(KeyCode.Space)&&canJump) {
@@ -641,21 +816,44 @@ public class player : NetworkBehaviour
                 if (Input.GetKey(KeyCode.LeftShift)){sprint = 1.45f;}
                 if (Input.GetKey(KeyCode.Mouse0))
                 {
-                    if (attackcooldown <= 0)
+                    if (isTryingSupply)
                     {
-                        if (currentslot == 0)
+                        if (generator.resourcesCount[0] >= 40)
                         {
-                            animator.SetBool("Attack", true);
-                            attackcooldown = 1f;
-                            Attack();
+                            CmdSpawnSupply(supplymarker.transform.position);
+                            supplymarker.SetActive(false);
+                            UISupplyCost.SetActive(false);
+                            isTryingSupply = false;
+                            PlayOneShot("event:/click");
                         }
                         else
                         {
-                            attackcooldown = 1f / weapon.firerate;
-                            for(int i=0;i<weapon.firespershoot;++i)Fire();
+                            PlayOneShot("event:/нельзя");
                         }
                     }
-
+                    else
+                    {
+                        if (attackcooldown <= 0)
+                        {
+                            if (currentslot == 0)
+                            {
+                                animator.SetBool("Attack", true);
+                                attackcooldown = characterclass != 3 ? 1f : 0.5f;
+                                Attack();
+                            }
+                            else
+                            {
+                                if (reloadtimer <= 0 && ammo > 0)
+                                {
+                                    --ammo;
+                                    attackcooldown = 1f / weapon.firerate;
+                                    UIammo.text = ammo + "/" + allammo;
+                                    for (int i = 0; i < weapon.firespershoot; ++i) Fire();
+                                }
+                            }
+                        }
+                    
+                    }
                 }
                 if (Input.GetKeyDown(KeyCode.Mouse1)&&slot1.active) 
                 {
@@ -671,9 +869,14 @@ public class player : NetworkBehaviour
                 }
                 if (Input.GetKeyDown(KeyCode.G))
                 {
-                    if (grenadecooldown <= 0)
+                    if (grenadecooldown <= 0&&grenadecount>0)
                     {
+                        --grenadecount;
                         grenadecooldown = 2f;
+                        UIgrenadecounter.text = grenadecount + "";
+                        if (grenadecount == 0) {
+                        grenadebar.value = 1f-grenadecooldown*0.5f;
+                        }
                         CmdSpawnGrenade();
                     }
                 }
@@ -684,6 +887,13 @@ public class player : NetworkBehaviour
                     {
                         CmdMoveMarker(hit.point);
                     }
+                }
+                if (Input.GetKeyDown(KeyCode.Escape)&&!someEscapeTrigger)
+                {
+                    isEscape = true;
+                    UIEscapeMenu.SetActive(true);
+                    Cursor.lockState = CursorLockMode.None;
+                    Cursor.visible = true;
                 }
 
                 //доводка оружия и красивости
@@ -712,6 +922,7 @@ public class player : NetworkBehaviour
                 }
 
                 //UI
+                if (uiweapontimer > 0) { uiweapontimer -= Time.deltaTime; } else if(uiweapontimer>-3){ uiweapontimer = -3;UIweapon.SetActive(false); }
                 GameObject[] objs = GameObject.FindGameObjectsWithTag("UI");
                 for (int i = 0; i < objs.Length; ++i) 
                 {
@@ -732,6 +943,7 @@ public class player : NetworkBehaviour
                 gobackinteraction = false;
                 deathInteraction = false;
                 seeContainer = false;
+                supplyinteracton = false;
                 classchangeInteraction = false;
                 Physics.Raycast(head.transform.position, head.transform.forward, out hit, 6);
                 if (hit.transform)
@@ -751,6 +963,12 @@ public class player : NetworkBehaviour
                         seeInteraction = true;
                         missionselectorinteraction = true;
                     }
+                    if (hit.collider.transform.name == "Supply(Clone)"&& hit.collider.GetComponent<supply>().amount>0)
+                    {
+                        seeInteraction = true;
+                        supplyinteracton = true;
+                        supply = hit.collider.GetComponent<supply>().netId;
+                    }
                     if (hit.collider.transform.name == "ClassChanger")
                     {
                         seeInteraction = true;
@@ -763,6 +981,7 @@ public class player : NetworkBehaviour
                         targetobject = hit.collider.transform.gameObject;
                     }
                 }
+                if (!supplyinteracton) { supplyprogress = 0f;supplyprogressbar.gameObject.SetActive(false); }
                 
                 if (Physics.Raycast(transform.position, -transform.up, out hit, 6))
                 {
@@ -899,7 +1118,13 @@ public class player : NetworkBehaviour
         canJump = false;
         canUpJump = false;
         
-        if (Physics.Raycast(transform.position, -transform.up, out hit, 1.25f)) {
+        if (
+            Physics.Raycast(transform.position, -transform.up, out hit, 1.25f)||
+            Physics.Raycast(transform.position+transform.forward/2, -transform.up, out hit, 1.25f)||
+            Physics.Raycast(transform.position - transform.forward / 2, -transform.up, out hit, 1.25f)||
+            Physics.Raycast(transform.position + transform.right / 2, -transform.up, out hit, 1.25f)||
+            Physics.Raycast(transform.position - transform.right / 2, -transform.up, out hit, 1.25f)
+            ) {
             if (isLocalPlayer) { canJump = true; }
             if (isServer && hit.collider.transform.CompareTag("Chunk")) {
                 thissmell.transform.position = transform.position;//hit.point;
@@ -917,7 +1142,7 @@ public class player : NetworkBehaviour
             }
             if (generator.platformstatus == 1)
             {
-                if (!isFade)
+                if (!isFade&&isLocalPlayer)
                 {
                     UIBlackScreen.color = UIBlackScreen.color - new Color(0, 0, 0, Time.deltaTime * 0.125f);
                     if (UIBlackScreen.color.a <= 0) { UIBlackScreen.gameObject.SetActive(false); isFade = true; UIBlackScreen.color = new Color(0, 0, 0, 1); }
@@ -945,7 +1170,7 @@ public class player : NetworkBehaviour
             {
                 if (Vector3.Distance(allitems[i].transform.position, transform.position) < 3f)
                 {
-                    allitems[i].transform.position -= (allitems[i].transform.position - transform.position) * Time.deltaTime * 2;
+                    allitems[i].transform.position -= (allitems[i].transform.position - transform.position) * Time.deltaTime * 4;
                 }
             }
         }
@@ -957,12 +1182,14 @@ public class player : NetworkBehaviour
             PlayOneShot("event:/step");
         }
 
-        //классы убрал
+        //тики для тикового урона(логично)
+        tickf += Time.deltaTime;
     }
     private void PlayOneShot(string eventname) 
     {
         FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
         instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        FMODUnity.RuntimeManager.AttachInstanceToGameObject(instance, transform, rb);
         instance.start();
         instance.release();
     }
@@ -971,14 +1198,15 @@ public class player : NetworkBehaviour
         FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
         instance.setParameterByName(paramname, paramvalue);
         instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        FMODUnity.RuntimeManager.AttachInstanceToGameObject(instance, transform, rb);
         instance.start();
         instance.release();
     }
-   private void OnGUI()
+   /*private void OnGUI()
     {
      //   GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), FPS + " FPS");
         GUI.Box(new Rect(Screen.width - 200, Screen.height - 20, 200, 20), roomsize + " roomsize");
-    } /**/
+    } */
     private void OnCollisionEnter(Collision collision)
     {
         if (collision.gameObject.CompareTag("Item"))
@@ -1011,7 +1239,19 @@ public class player : NetworkBehaviour
                 //int dmg = int.Parse(other.gameObject.name);
                 Dmg(dmg);
             }
-            Destroy(other.gameObject);
+          //  Destroy(other.gameObject);
+        }
+    }
+    private void OnTriggerStay(Collider other)
+    {
+        if (other.gameObject.CompareTag("Damager")&&tickf>1)
+        {
+            print(tickf);
+            tickf = 0;
+            if (isLocalPlayer)
+            {
+                Dmg(15);
+            }
         }
     }
     public static readonly int[] levels = {

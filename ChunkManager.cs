@@ -44,8 +44,8 @@ public class ChunkManager : MonoBehaviour
                         }
                     }
             }
-            for (int i = 0; i < ms.Count; ++i)
-            { ms[i].BakeMesh(); }
+            /*for (int i = 0; i < ms.Count; ++i)
+            { ms[i].BakeMesh(); }*/
             marchingspaces = ms.ToArray();
         }
         else
@@ -61,7 +61,7 @@ public class ChunkManager : MonoBehaviour
                 centers[i] = spaces[i].GetComponent<TurboMarching>().center;
                 sizes[i] = spaces[i].GetComponent<TurboMarching>().sizeXYZ;
             }
-            Generator generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
+            generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
             for (int i = 0; i < turboMarchings.Length; ++i)
             {
                 for (int ii = i; ii < turboMarchings.Length; ++ii) if (i != ii)
@@ -79,39 +79,45 @@ public class ChunkManager : MonoBehaviour
     }
 
     // Update is called once per frame
-    void FixedUpdate()
+    void Update()
     {
         if (GameObject.FindGameObjectWithTag("Destroyer")) {
             destroyers = GameObject.FindGameObjectsWithTag("Destroyer");
+            List<int> dd = new List<int>();
             for (int d = 0; d < destroyers.Length; ++d)
-            {
-                if (!TURBOMODE)
+                if (!objs.ContainsKey(destroyers[d]) || Vector3.Distance(objs[destroyers[d]], destroyers[d].transform.position) > destroyers[d].transform.localScale.x * 0.25f)
                 {
-                    for (int i = 0; i < marchingspaces.Length; ++i)
-                    {
-                        if (Vector3.Distance(destroyers[d].transform.position, centers[i]) < sizes[i] + destroyers[d].transform.localScale.x)
-                        {
-                            marchingspaces[i].CheckUpdate(destroyers[d]);
-                        }
-                    }
+                    dd.Add(d);
+                    if (!objs.ContainsKey(destroyers[d])) { objs.Add(destroyers[d], destroyers[d].transform.position); } else { objs[destroyers[d]] = destroyers[d].transform.position; }
                 }
-                else 
+                for (int i = 0; i < turboMarchings.Length; ++i) {
+                List<Vector4> updater = new List<Vector4>();
+                    bool isChanged = false;
+                for (int d = 0; d < dd.Count; ++d)
                 {
-                    bool isChanged=false;
-                    if (!objs.ContainsKey(destroyers[d]) || Vector3.Distance(objs[destroyers[d]],destroyers[d].transform.position)>destroyers[d].transform.localScale.x*0.25f)
-                    {
-                        if (!objs.ContainsKey(destroyers[d])) { objs.Add(destroyers[d], destroyers[d].transform.position); } else { objs[destroyers[d]] = destroyers[d].transform.position; }
-                        for (int i = 0; i < turboMarchings.Length; ++i)
+                    //
+                      //  
+
                         {
-                            if (Vector3.Distance(destroyers[d].transform.position, turboMarchings[i].center) < turboMarchings[i].sizeXYZ + destroyers[d].transform.localScale.x)
+                            /*if (Vector3.Distance(destroyers[d].transform.position, turboMarchings[i].center) < turboMarchings[i].sizeXYZ + destroyers[d].transform.localScale.x)
                             {
                                 turboMarchings[i].CheckUpdate(destroyers[d]);
                                 isChanged = true;
+                            }*/
+                            if (generator.IsChunkContainSphere(turboMarchings[i], destroyers[dd[d]].transform.position, destroyers[dd[d]].transform.localScale.x))
+                            {
+                                updater.Add(new Vector4(destroyers[dd[d]].transform.position.x, destroyers[dd[d]].transform.position.y, destroyers[dd[d]].transform.position.z, destroyers[dd[d]].transform.localScale.x));
+                                isChanged = true;
                             }
                         }
-                    }
-                    //TODO обновлять!!!!
-                    // if(generator.isServer&&isChanged)generator.UpdateWalkGroup();
+
+                        //TODO обновлять!!!!
+                        // if(generator.isServer&&isChanged)generator.UpdateWalkGroup();
+                    
+                }
+                if (isChanged) 
+                {
+                    turboMarchings[i].UpdateMesh(updater.ToArray());
                 }
             }
         }

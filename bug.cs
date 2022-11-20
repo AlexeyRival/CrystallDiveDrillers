@@ -6,21 +6,21 @@ using UnityEngine.Networking;
 
 public class bug : NetworkBehaviour
 {
-    public Generator generator;
-    [SyncVar]
     public state State;
     [SyncVar]
     public bool isStartWalking;
     public float speed = 3.5f;
     public float agression = 1f;
     public float scale = 1f;
+    public float upper = 1f;
+    public bool isBoss;
+    public bool isPreSpawn;
     public SyncListVector3 path = new SyncListVector3();
     [SyncVar]
     private int currentpoint;
     public Transform rotator;
-
-    public GameObject attacksphere, hitsphere, donthitsphere,spawneffect;
-
+    public bool isBonesDrop = true;
+    public GameObject attacksphere,spray, hitsphere, donthitsphere,spawneffect;
     public Slider hpbar;
     public GameObject back;//спина
     public GameObject jaw_up, jaw_down;//челюсти
@@ -37,7 +37,9 @@ public class bug : NetworkBehaviour
     private float spd;
     private Vector3 middlepoint;
     private float dropHeight = 4, stepTrashold = 1f;
-    public float attacktimer, visiontimer;
+    public float visiontimer;
+    [SyncVar]
+    public float attacktimer;
     public int updatetimer;
     private bool isAttack;
     private GameObject target;
@@ -45,18 +47,34 @@ public class bug : NetworkBehaviour
     public int maxhp = 100;
     private int localhp = 100;
     private float spawnedtimer;
+    private float lastdamage;
     private bool isSpawn;
     private int soundtimer;
     private HashSet<int> infos;
+    private int i, ii;
     [SyncVar]
     public int hp = 100;
+    [ClientRpc]
+    private void RpcChangeState(state State) 
+    {
+        this.State = State;
+    }
     [Command]
-    private void CmdAttack(int dmg) {
-        GameObject ob = Instantiate(attacksphere, defpoint_l.transform.position, transform.rotation);
-        ob.transform.Translate(1f, 0, 0);
-        ob.name = "" + dmg;
-        Destroy(ob, 0.1f);
-        NetworkServer.Spawn(ob);
+    private void CmdAttack(int id) {
+        if (id == 0)
+        {
+            GameObject ob = Instantiate(attacksphere, defpoint_l.transform.position, transform.rotation);
+            ob.transform.Translate(1f, 0, 0);
+            Destroy(ob, 0.1f);
+            NetworkServer.Spawn(ob);
+        }
+        else if(id==1)
+        {
+            GameObject ob = Instantiate(spray, jaw_down.transform.position, transform.rotation);
+            ob.transform.Translate(0, 0, 0.5f);
+            Destroy(ob, attacktimer);
+            NetworkServer.Spawn(ob);
+        }
     }
     [Command]
     private void CmdDmg(int dmg) {
@@ -87,12 +105,15 @@ public class bug : NetworkBehaviour
     private void DropAll()
     {
         hpbar.gameObject.SetActive(false);
+        GetComponent<NetworkTransform>().enabled = false;
         DropChild(transform.GetChild(0));
         GetComponent<Rigidbody>().constraints = RigidbodyConstraints.None;
-        GetComponent<Rigidbody>().mass = 1f;
+        GetComponent<Rigidbody>().mass = 10f;
         GetComponent<Rigidbody>().useGravity = true;
 
-        GetComponent<Rigidbody>().AddRelativeForce(0,50f,0,ForceMode.Impulse);
+        if(isBonesDrop)GetComponent<Rigidbody>().AddRelativeForce(0,50f,0,ForceMode.Impulse);
+        if (Generator.only.currentquest == Generator.questtype.Бойня) { ++Generator.only.questprogress; }
+        if (isBoss&& Generator.only.currentquest == Generator.questtype.Ликвидация) { ++Generator.only.questprogress; }
     }
         private void DropChild(Transform trans) {
         if (trans.GetComponent<CapsuleCollider>()) {
@@ -100,7 +121,8 @@ public class bug : NetworkBehaviour
             if (!trans.GetComponent<Rigidbody>())
             {
                 trans.gameObject.AddComponent<Rigidbody>();
-                trans.gameObject.GetComponent<Rigidbody>().AddForce(0, 5f, 0, ForceMode.Impulse);
+                trans.gameObject.GetComponent<Rigidbody>().mass = GetComponent<Rigidbody>().mass;
+                if (isBonesDrop) trans.gameObject.GetComponent<Rigidbody>().AddForce(0, 5f, 0, ForceMode.Impulse);
                 if (trans.parent && trans.parent.GetComponent<Rigidbody>()) {
                     trans.gameObject.AddComponent<CharacterJoint>();
                     trans.gameObject.GetComponent<CharacterJoint>().connectedBody = trans.parent.GetComponent<Rigidbody>();
@@ -152,7 +174,7 @@ public class bug : NetworkBehaviour
     public void SetPath(List<Vector3> path)
     {
         this.path.Clear();
-        for (int i = 0; i < path.Count; ++i)
+        for (i = 0; i < path.Count; ++i)
         {
             this.path.Add(path[i]);
         }
@@ -162,19 +184,22 @@ public class bug : NetworkBehaviour
     
     private void Start()
     {
-        generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
         hp = maxhp;
         localhp = maxhp;
         if (isServer) 
         {
             infos = new HashSet<int>();
         }
-        spawnedtimer = Random.Range(3.5f, 4.5f);
-        Destroy(Instantiate(spawneffect, transform.position, transform.rotation),spawnedtimer*0.5f);
-        transform.Translate(0, -spawnedtimer*2, 0);
-        transform.Rotate(-90,0,0);
-        if (isServer) {
-            SetPath(new List<Vector3>(new Vector3[] { transform.position+ new Vector3(0,spawnedtimer*2,0),transform.position+ new Vector3(Random.Range(-1f,1f),spawnedtimer*2, Random.Range(-1f, 1f)),transform.position+ new Vector3(Random.Range(-1f,1f),spawnedtimer*2, Random.Range(-1f, 1f)), transform.position + new Vector3(0, spawnedtimer * 2, 0) }));
+        if (!isPreSpawn)
+        {
+            spawnedtimer = Random.Range(3.5f, 4.5f);
+            Destroy(Instantiate(spawneffect, transform.position, transform.rotation), spawnedtimer * 0.5f);
+            transform.Translate(0, -spawnedtimer * 2, 0);
+            transform.Rotate(-90, 0, 0);
+            if (isServer)
+            {
+                SetPath(new List<Vector3>(new Vector3[] { transform.position + new Vector3(0, spawnedtimer * 2, 0), transform.position + new Vector3(Random.Range(-1f, 1f), spawnedtimer * 2, Random.Range(-1f, 1f)), transform.position + new Vector3(Random.Range(-1f, 1f), spawnedtimer * 2, Random.Range(-1f, 1f)), transform.position + new Vector3(0, spawnedtimer * 2, 0) }));
+            }
         }
         soundtimer = 700 + Random.Range(1, 20) * 100;
     }
@@ -185,33 +210,46 @@ public class bug : NetworkBehaviour
         transform.rotation = Quaternion.Lerp(transform.rotation, rotator.rotation, 3f * Time.deltaTime);//2
         if (isStartWalking) {
             if (currentpoint == path.Count-1) { isStartWalking = false; return; }
-            
+
             //transform.Translate(0, -Time.deltaTime * scale, 0);
-            rotator.LookAt(path[currentpoint]);
-            //rotator.Rotate(-20,0,0);
-            
-            transform.Translate(0, 0, Time.deltaTime * speed);
+            //rotator.LookAt(path[currentpoint]);
+            if (Physics.Raycast(transform.position, path[currentpoint]-transform.position, out hit,2f))
             {
-                transform.Translate(0,Time.deltaTime*scale, 0);
+                rotator.LookAt(hit.point);
+                rotator.transform.Rotate(-20,0,0);
+            }
+            else 
+            {
+                rotator.LookAt(path[currentpoint]);
+            }
+            //rotator.transform.rotation = Quaternion.Slerp(rotator.transform.rotation, Quaternion.LookRotation(path[currentpoint]-transform.position), 2f);
+            //rotator.Rotate(-20,0,0);
+
+            if (Quaternion.Angle(transform.rotation,rotator.rotation)<90)
+            { 
+                transform.Translate(0, 0, Time.deltaTime * speed);
+                {
+                    transform.Translate(0, Time.deltaTime * upper * 1.25f, 0);
+                } 
             }
 
         }
         if (soundtimer == 0) {
-            PlayOneShot("event:/bugsound");
+            PlayOneShot(!isBoss ? "event:/bugsound" : "event:/bigbugsound");
             soundtimer = 700 + Random.Range(1, 20) * 100;
         } else { --soundtimer; }
         if (isServer)
         {
             if (isStartWalking)
             {
-                if (Vector3.Distance(transform.position, path[currentpoint]) < 1f*scale)
+                if (Vector3.Distance(transform.position, path[currentpoint]) < 1.35f*scale)
                 {
                     ++currentpoint;
                 }
                 if (target)
                 {
                     dt = Vector3.Distance(target.transform.position, transform.position);
-                    if (dt < 3 )//|| (Vector3.Distance(target.transform.position,path[path.Count-1])>dt*0.5f&&dt>20))
+                    if (dt < 3 * (scale * 0.5f))//|| (Vector3.Distance(target.transform.position,path[path.Count-1])>dt*0.5f&&dt>20))
                     {
                         isStartWalking = false;
                     } 
@@ -225,7 +263,7 @@ public class bug : NetworkBehaviour
                     {
                         if (visiontimer <= 0 && GameObject.FindGameObjectsWithTag("Smell").Length > 0)
                         {
-                            for (int i = 0; i < GameObject.FindGameObjectsWithTag("Smell").Length; ++i)
+                            for (i = 0; i < GameObject.FindGameObjectsWithTag("Smell").Length; ++i)
                             {
                                 if (Random.Range(0, 3) == 0 && Vector3.Distance(transform.position, GameObject.FindGameObjectsWithTag("Smell")[i].transform.position) < 40f)
                                 {
@@ -250,24 +288,25 @@ public class bug : NetworkBehaviour
                         else
                         {
                             State = state.none;
+                            RpcChangeState(State);
                         }
                     }
                     else
                     {
-                        if (Vector3.Distance(transform.position, target.transform.position) > 2.5f)
+                        if (Vector3.Distance(transform.position, target.transform.position) > 3 * (scale*0.5f))
                         {
                             if (updatetimer == 0)
                             {
                                 try
                                 {
                                     //SetPath(generator.GetPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
-                                    SetPath(generator.GetNeoPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
+                                    SetPath(Generator.only.GetNeoPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
                                     //  SetPath(generator.GetFastPath(transform.position, target.transform.position + new Vector3(Random.Range(-2f, 2f), 0, Random.Range(-2f, 2f))));
                                     if (path.Count == 0) {
                                         //TODO ворует путь у другого жука
                                     }
                                     path.Add(path[path.Count - 1] + new Vector3(Random.Range(-1.5f, 1.5f), 0, Random.Range(-1.5f, 1.5f)));
-                                    for (int i = 0; i < path.Count; ++i)
+                                    for (i = 0; i < path.Count; ++i)
                                     {
                                         path[i] += new Vector3(Random.Range(-0.5f, 0.5f), 0, Random.Range(-0.5f, 0.5f));
                                     }
@@ -276,10 +315,12 @@ public class bug : NetworkBehaviour
                                 if (Random.Range(0, 4) != 0)
                                 {
                                     State = state.move;
+                                    RpcChangeState(State);
                                 }
                                 else
                                 {
                                     State = state.defense;
+                                    RpcChangeState(State);
                                 }
                             }
                             else
@@ -289,23 +330,49 @@ public class bug : NetworkBehaviour
                         }
                         else
                         {
-                            rotator.LookAt(target.transform);
-                            if (false)//(Random.Range(0, 2) != 0)
+                            rotator.LookAt(target.transform.position - new Vector3(0, target.transform.localScale.y, 0));
+                            if (!isBoss)
                             {
-                                State = state.bite;
+                                if (Random.Range(0, 2) != 0)
+                                {
+                                    State = state.bite;
+                                    RpcChangeState(State);
+                                }
+                                else
+                                {
+                                    State = state.slash;
+                                    RpcChangeState(State);
+                                }
+                                attacktimer = 2.4f - agression;
                             }
                             else
                             {
-                                State = state.slash;
+                                int r = 2;// Random.Range(0, 3);
+                                switch (r) 
+                                {
+                                    case 0: 
+                                        State = state.bite;
+                                        attacktimer = 2.4f - agression;
+                                        break;
+                                    case 1: 
+                                        State = state.slash;
+                                        attacktimer = 2.4f - agression;
+                                        break;
+                                    case 2: 
+                                            State = state.spray;
+                                            attacktimer = 3.5f + agression;
+                                        break;
+                                    case 3: break;
+                                }
+                                RpcChangeState(State);
                             }
-                            attacktimer = 2.4f - agression;
                             isAttack = false;
                         }
                     }
                 }
                 else
                 {
-                    if (target) rotator.LookAt(target.transform);
+                    if (target) rotator.LookAt(target.transform.position-new Vector3(0,target.transform.localScale.y,0));
                     attacktimer -= Time.deltaTime;
                     if (attacktimer <= 0)
                     {
@@ -317,9 +384,9 @@ public class bug : NetworkBehaviour
                 }
             }
             
-            if(player.players!=null)for (int i = 0; i < player.players.Count; ++i) 
+            if(player.players!=null)for (i = 0; i < player.players.Count; ++i) 
             {
-                for (int ii = 0; ii < player.players[i].damageinfos.Count; ++ii) 
+                for (ii = 0; ii < player.players[i].damageinfos.Count; ++ii) 
                 {
                         if (player.players[i].damageinfos[ii].netid == netId)
                         {
@@ -334,7 +401,7 @@ public class bug : NetworkBehaviour
             player plr=null;
             if (GameObject.FindGameObjectWithTag("Player")) { plr = GameObject.FindGameObjectWithTag("Player").GetComponent<player>(); }
 
-            if (plr)for (int ii = 0; ii < plr.damageinfos.Count; ++ii)
+            if (plr)for (ii = 0; ii < plr.damageinfos.Count; ++ii)
             {
                 if (plr.damageinfos[ii].netid == netId)
                 {
@@ -359,7 +426,7 @@ public class bug : NetworkBehaviour
             {
                 if (attacktimer < 0.2f)
                 {
-                    if (!isAttack) { isAttack = true; if (isServer) { CmdAttack(15); } }
+                    if (!isAttack) { isAttack = true; if (isServer) { CmdAttack(0); } }
                     back.transform.Translate(0, Time.deltaTime * -3.6f, 0);
                     //jaw_up.transform.Rotate(Time.deltaTime * 100, 0, 0);
                     //jaw_down.transform.Rotate(Time.deltaTime * -100, 0, 0);
@@ -371,9 +438,31 @@ public class bug : NetworkBehaviour
                 }
             }
         }
+        if (State==state.spray)
+        {
+            if (!isAttack) { isAttack = true; if (isServer) { CmdAttack(1); } }
+            if (attacktimer > 0.2f && attacktimer < 0.4f)
+            {
+                jaw_up.transform.Rotate(Time.deltaTime * -125, 0, 0);
+                jaw_down.transform.Rotate(Time.deltaTime * 125, 0, 0);
+            }
+            else
+            {
+                if (attacktimer < 0.2f)
+                {
+                    //jaw_up.transform.Rotate(Time.deltaTime * 100, 0, 0);
+                    //jaw_down.transform.Rotate(Time.deltaTime * -100, 0, 0);
+                }
+                else if((3.5f + agression) - attacktimer < 0.2f)
+                {
+                    jaw_up.transform.Rotate(Time.deltaTime * 125, 0, 0);
+                    jaw_down.transform.Rotate(Time.deltaTime * -125, 0, 0);
+                }
+            }
+        }
 
-        middlepoint = new Vector3(7.768f, ((v_fr.y + v_cr.y + v_br.y) - (v_fl.y + v_cl.y + v_bl.y)) * -12f, -180);
-        back.transform.localRotation = Quaternion.Slerp(back.transform.localRotation, Quaternion.Euler(middlepoint), 3f * Time.deltaTime);
+        //middlepoint = new Vector3(7.768f, ((v_fr.y + v_cr.y + v_br.y) - (v_fl.y + v_cl.y + v_bl.y)) * -12f, -180);
+        //back.transform.localRotation = Quaternion.Slerp(back.transform.localRotation, Quaternion.Euler(middlepoint), 3f * Time.deltaTime);
 
         SetLeg(leg_fr, v_fr, s_fr, 2f);
         SetLeg(leg_fl, v_fl, s_fl, 2f);
@@ -556,12 +645,15 @@ public class bug : NetworkBehaviour
         //hp
         if (localhp != hp) {
             localhp = hp;
+            hpbar.gameObject.SetActive(true);
             //Destroy(Instantiate(hitsphere, transform.position, transform.rotation), 1f);
             hpbar.value = localhp * 1f / maxhp;
+            lastdamage = 5f;
         }
+        if (lastdamage > 0) { lastdamage -= Time.deltaTime; } else if(!isBoss){ hpbar.gameObject.SetActive(false); }
         if (hp <= 0) {
-            this.enabled = false;
-            Destroy(gameObject,5f);
+            enabled = false;
+            Destroy(gameObject,8f);
             DropAll();
         }
     }
@@ -584,7 +676,7 @@ public class bug : NetworkBehaviour
     {
         if (Application.isPlaying) {
             Gizmos.color = new Color(0.565f,0.018f,0.433f);
-            for(int i = 0; i < path.Count; ++i)
+            for(i = 0; i < path.Count; ++i)
             {
                 Gizmos.color = new Color(0.67f, Mathf.Sin(1f / path.Count * i), Mathf.Cos(1f / path.Count * i));
                 Gizmos.DrawCube(path[i], new Vector3(0.2f, 0.2f, 0.2f));
@@ -593,6 +685,7 @@ public class bug : NetworkBehaviour
     }
     private void OnDestroy()
     {
+        hpbar.gameObject.SetActive(false);
         NetworkServer.Destroy(gameObject);
     }
     private void OnCollisionEnter(Collision collision)
@@ -600,9 +693,9 @@ public class bug : NetworkBehaviour
         if (isServer)
         {
             if (collision.gameObject.CompareTag("Destroyer")) {
-                Dmg(15,collision.other.gameObject);
-                CmdDmg(15);
-                if (hp - 15<0) { ++player.thisplayer.kills; }
+                Dmg(5,collision.other.gameObject);
+                CmdDmg(5);
+                if (hp - 5<0) { ++player.thisplayer.kills; }
             }
         }
         if (collision.gameObject.CompareTag("Destroyer"))
@@ -633,7 +726,9 @@ public class bug : NetworkBehaviour
         move,
         defense,
         bite,
-        slash
+        slash,
+        spray,
+        split
     }
     
     public struct damageinfo {

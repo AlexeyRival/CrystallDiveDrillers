@@ -9,6 +9,7 @@ public class grenade : NetworkBehaviour
     public bool isContact=true;
     public int explosioncount=1;
     public float time;
+    public int maxcount = 4;
     public TextMesh timer;
     private void OnCollisionEnter(Collision collision)
     {
@@ -44,8 +45,14 @@ public class grenade : NetworkBehaviour
             }
         }
     }
+    private bool quitting;
+    private void OnApplicationQuit()
+    {
+        quitting = true;
+    }
     private void OnDestroy()
     {
+        if (quitting) { return; }
         int k = explosioncount;
         for (int i = 0; i < k; ++i)
         {

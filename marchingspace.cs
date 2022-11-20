@@ -20,19 +20,19 @@ public class marchingspace : MonoBehaviour
     public Generator generator;
     private FastNoiseLite noise, secondnoise,thirdnoise;
     public List<marchingspace> neighbors, friends;
-    public Dictionary<Vector3, Generator.walkpoint> walkpoints;
+ //   public Dictionary<Vector3, Generator.walkpoint> walkpoints;
     public Dictionary<Vector3, byte> borderpoints;
     public Dictionary<Vector3Int, GameObject> spawneddecorations;
     
     //поиск пути
     public bool isChecked;
     public int weight;
-
+    /**
     void Start()
     {
         friends = new List<marchingspace>();
         neighbors = new List<marchingspace>();
-        walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
+   //     walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         borderpoints = new Dictionary<Vector3, byte>();
         spawneddecorations = new Dictionary<Vector3Int, GameObject>();
         generator = GameObject.Find("ChungGenerator").GetComponent<Generator>();
@@ -217,7 +217,7 @@ public class marchingspace : MonoBehaviour
                     {
                         generator.walkpoints.Add(new Generator.walkpoint(new Vector3(x + transform.position.x, y + transform.position.y, z + transform.position.z)));
                     }
-                }*/
+                }
         //for (int i = 0; i < Random.Range(15, 30); ++i) {
         //Instantiate(ore, new Vector3(Random.Range(0, sizeX)*step, Random.Range(0, sizeY) * step, Random.Range(0, sizeZ) * step)+transform.position, Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)));
         //}
@@ -229,7 +229,7 @@ public class marchingspace : MonoBehaviour
         List<Vector3> fuckthislist = new List<Vector3>();
         List<int> triangles = new List<int>();
         List<Vector2> uvs = new List<Vector2>();
-        walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
+     //   walkpoints = new Dictionary<Vector3, Generator.walkpoint>();
         borderpoints = new Dictionary<Vector3, byte>();
         meshData bufdata;
         float f,sf,tf;
@@ -320,9 +320,9 @@ public class marchingspace : MonoBehaviour
 
                             if (matches > 0 && borders != matches)
                             {
-                                if (!walkpoints.ContainsKey(calculatedvector))
+                            //    if (!walkpoints.ContainsKey(calculatedvector))
                                 {
-                                    walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,true));
+                              //      walkpoints.Add(calculatedvector, new Generator.walkpoint(calculatedvector,true));
                                     if (x < 2 || x > sizeX - 3 || y < 2 || y > sizeY - 3 || z < 2 || z > sizeZ - 3) {
                                     borderpoints.Add(calculatedvector, 0);
                                     }
@@ -333,28 +333,28 @@ public class marchingspace : MonoBehaviour
                             if (walkpoints.ContainsKey(calculatedvector)) {
                                 walkpoints.Remove(calculatedvector);
                             }
-                        }*/
+                        }
                         } }
                 }
             }
         }
         if (generator.isServer)
         {
-            foreach (var point in walkpoints)
+          //  foreach (var point in walkpoints)
             {
                 //   if (point.Value.isBorder)
                 {
                     for (i = 0; i < neighborsTable.Length; ++i)
                     {
-                        if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step) && !point.Value.friends.Contains(point.Value.position + neighborsTable[i] * step))
+                     //   if (walkpoints.ContainsKey(point.Value.position + neighborsTable[i] * step) && !point.Value.friends.Contains(point.Value.position + neighborsTable[i] * step))
                         {
-                            point.Value.friends.Add(point.Value.position + neighborsTable[i] * step);
-                            walkpoints[point.Value.position + neighborsTable[i] * step].friends.Add(point.Key);
+                       //     point.Value.friends.Add(point.Value.position + neighborsTable[i] * step);
+                     //       walkpoints[point.Value.position + neighborsTable[i] * step].friends.Add(point.Key);
                         }
                     }
                 }
             }
-                generator.walkpointscount += walkpoints.Count;
+           //     generator.walkpointscount += walkpoints.Count;
         }
         mesh.vertices = fuckthislist.ToArray();
         mesh.triangles = triangles.ToArray();
@@ -387,10 +387,10 @@ public class marchingspace : MonoBehaviour
             ++k;
             alivepoints = 0;
             buffer = new List<Vector3>();
-            foreach (var point in walkpoints)
+          //  foreach (var point in walkpoints)
             {
-                if (point.Value.weight == 0) {
-                    for (int i = 0; i < point.Value.friends.Count; ++i) {
+                //if (point.Value.weight == 0) {
+                    //for (int i = 0; i < point.Value.friends.Count; ++i) {
                         if (walkpoints[point.Value.friends[i]].weight != 0) {
                             buffer.Add(point.Key);
                             break;
@@ -524,7 +524,7 @@ public class marchingspace : MonoBehaviour
                         for (int z = 0; z < sizeZ; ++z)
                         {
                             if (!space[x, y, z]) Gizmos.DrawCube(transform.position + new Vector3(x * step, y * step, z * step), new Vector3(0.1f, 0.1f, 0.1f));
-                        }*/
+                        }
             }
             if (maxx != 0) {
                 Gizmos.color = new Color(0.43f, 0.93f, 0.2f, 0.4f);
@@ -584,7 +584,7 @@ public class marchingspace : MonoBehaviour
                     if (miny > sizeY) continue;
                     if (maxz < 0) continue;
                     if (minz > sizeZ) continue;
-                    */
+                    
                     if (minx < 0) minx = 0;
                     if (maxx > sizeX) maxx = sizeX;
                     if (miny < 0) miny = 0;
@@ -932,4 +932,5 @@ public class marchingspace : MonoBehaviour
 {0, 9, 1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 {0, 3, 8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1},
 {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1}};
+**/
 }

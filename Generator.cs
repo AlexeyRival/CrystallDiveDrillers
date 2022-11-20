@@ -13,7 +13,7 @@ public class Generator : NetworkBehaviour
     public GameObject platform, planet, hub, blackscreen;
     public GameObject cluster;
     public GameObject mule, mulemarker;
-    public GameObject hiveprefab;
+    public GameObject hiveprefab, eggprefab, bridge;
     public ChunkManager manager;
     public static bool isWorking;
     //public Texture3D biomemap;
@@ -25,6 +25,7 @@ public class Generator : NetworkBehaviour
     public List<Vector3> bugspawnpoints;
     public List<Vector3> cavepoints;
     public List<Vector3> tunnelpoints;
+    public Vector4 canion;
     public List<Vector3> orepoints;
 
     public List<Resource> resources;
@@ -32,13 +33,18 @@ public class Generator : NetworkBehaviour
     public int generatedpoints = 0;
     private int generatingphase = 0;
     public bool isGeneratingCompleted, isStart;
-    private questtype currentquest;
+    public questtype currentquest;
+    public int questprogress;
     private int questtarget, questparam;
     private string funnyname;
     private int addingresourcecount, addingresourceid;
     private bool isaddingresource;
 
     public characterclass[] classes;
+
+    //делаю иллюзию того что это синглтон
+    public static Generator only;
+
 
     //музыка
     public AudioSource music;
@@ -91,6 +97,7 @@ public class Generator : NetworkBehaviour
 
     //дела отладочные
     private bool isShowDebugPathFinding;
+    private bool isdooropened;
 
     //сеть
     [SyncVar]
@@ -153,19 +160,27 @@ public class Generator : NetworkBehaviour
         }
     }
     [Command]
-    public void CmdSpawnHives() 
+    public void CmdSpawnHives(bool ishive) 
     {
-        
-        
-            for (int i = 0; i < cavepoints.Count - 1; ++i)if(i<questparam)
-            {
+        if (ishive)
+        {
+            for (int i = 0; i < cavepoints.Count - 1; ++i) if (i < questparam)
                 {
-                    Vector3 vec = new Vector3(Random.Range(-3f, 3f), Random.Range(-8f, -5f), Random.Range(-3f, 3f));
-                    NetworkServer.Spawn(Instantiate(hiveprefab, cavepoints[i] + vec, Quaternion.Euler(0, Random.Range(0, 360), 0), manager.chunks[0].transform));
-
+                    {
+                        Vector3 vec = new Vector3(Random.Range(-3f, 3f), Random.Range(-8f, -5f), Random.Range(-3f, 3f));
+                        NetworkServer.Spawn(Instantiate(hiveprefab, cavepoints[i] + vec, Quaternion.Euler(0, Random.Range(0, 360), 0), manager.chunks[0].transform));
+                    }
                 }
+        }
+        else 
+        {
+            for (int i = 0; i < questparam; ++i)
+            {
+                RaycastHit hit;
+                Physics.Raycast(bugspawnpoints[Random.Range(0, bugspawnpoints.Count)], Vector3.down, out hit);
+                NetworkServer.Spawn(Instantiate(eggprefab, hit.point, Quaternion.Euler(Random.Range(0, 360), Random.Range(0, 360), Random.Range(0, 360)), manager.chunks[0].transform));
             }
-        
+        }
     }
     public void AddResource(int id, int amout) {
         if(platformstatus==2)CmdAddResource(id, amout);
@@ -246,6 +261,8 @@ public class Generator : NetworkBehaviour
         
         if (currentquest == questtype.Добыча||currentquest == questtype.Поиск) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = resources[questtarget].materialName + " - " + resourcesCount[questtarget] + "/" + questparam; }else
         if (currentquest == questtype.Подавление) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = "Ульев сломано " + (questparam-GameObject.FindGameObjectsWithTag("Hive").Length) + "/" + questparam; }
+        if (currentquest == questtype.Ликвидация) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = "Дисцидалов убито " + questprogress + "/" + questparam; }
+        if (currentquest == questtype.Бойня) { Currentmission.transform.Find("Progress").GetComponent<Text>().text = "Жуков убито " + questprogress+ "/" + questparam; }
     }
     private void CloseMission(bool fail) {
         targetxp = 0;
@@ -274,6 +291,14 @@ public class Generator : NetworkBehaviour
         if (currentquest == questtype.Подавление) {
             xp_kills *= 5;
             if(!fail)xp_firstquest = 3000;
+        }else
+        if (currentquest == questtype.Ликвидация) {
+            xp_kills *= 5;
+            if(!fail)xp_firstquest = 3000;
+        }else
+        if (currentquest == questtype.Бойня) {
+            xp_kills *= 2;
+            xp_firstquest = 2000;
         }
 
 
@@ -292,7 +317,7 @@ public class Generator : NetworkBehaviour
 
         targetxp = xp_resource + xp_kills + xp_firstquest + xp_secondquest;
 
-        if (fail) { targetxp = 15; }
+        //if (fail) { targetxp = 15; }
 
         endmission.transform.Find("resources").GetComponent<Text>().text=xp_resource+"XP";
         endmission.transform.Find("kills").GetComponent<Text>().text=xp_kills + "XP";
@@ -301,45 +326,12 @@ public class Generator : NetworkBehaviour
         endmission.transform.Find("all").GetComponent<Text>().text=targetxp+"XP";
         endmission.transform.Find("Level").GetComponent<Text>().text = "" + player.level;
 
+        MissionControlVoice.only.PlayReplica(isFailure ? 12 : 11);
+
         blackscreen.SetActive(true);
         endmission.SetActive(true);
         Currentmission.SetActive(false);
         UpdateAccountLevel();
-    }
-    public List<Vector3> CalculateNeoPathOld() 
-    {
-        List<Vector3> outpath = new List<Vector3>();
-
-        //распределение следа
-
-        int _kernelindex = turbopath.FindKernel("Clear");
-        ComputeBuffer navbuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 4 + sizeof(int));
-        navbuffer.SetData(walkpoints);
-        turbopath.SetBuffer(_kernelindex, "points", navbuffer);
-        turbopath.SetBool("isEnded", false);
-        turbopath.SetInt("endpointid", -1);
-        int numThreadsPerAxis = Mathf.CeilToInt(walkpoints.Length / (float)8);
-        turbopath.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
-        _kernelindex = turbopath.FindKernel("Splat");
-        turbopath.SetVector("startpoint", pathstartpoint);
-        turbopath.SetVector("endpoint", pathendpoint);
-        turbopath.SetBuffer(_kernelindex, "points", navbuffer);
-        turbopath.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
-        _kernelindex = turbopath.FindKernel("Set");
-        turbopath.SetBuffer(_kernelindex, "points", navbuffer);
-        for (int i = 0; i < 4; ++i)
-        {
-            turbopath.SetInt("iter", i);
-            turbopath.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
-        }
-        print("есть обработка!");
-        for (int i = 0; i < 10; ++i) { print(walkpoints[Random.Range(0, walkpoints.Length)].iter); }
-        walkpoints = new TurboMarching.Walkpoint[walkpoints.Length];
-        navbuffer.GetData(walkpoints, 0, 0, walkpoints.Length);
-        navbuffer.Release();
-
-
-        return outpath;
     }
     public List<Vector3> CalculateNeoPath() {
         List<Vector3> outpath = new List<Vector3>();
@@ -420,13 +412,18 @@ public class Generator : NetworkBehaviour
     public bool IsChunkContainPoint(TurboMarching ms, Vector3 target) {
         return !(target.x < ms.transform.position.x || target.y < ms.transform.position.y || target.z < ms.transform.position.z || target.x > ms.transform.position.x + 10 || target.y > ms.transform.position.y + 9.75 || target.z > ms.transform.position.z + 9.75);
     }
+    public bool IsChunkContainSphere(TurboMarching ms, Vector3 spherepoint, float radius) 
+    {
+        return !(spherepoint.x+radius < ms.transform.position.x || spherepoint.y + radius < ms.transform.position.y || spherepoint.z + radius < ms.transform.position.z ||
+            spherepoint.x - radius > ms.transform.position.x + 10 || spherepoint.y - radius > ms.transform.position.y + 10 || spherepoint.z - radius > ms.transform.position.z + 10);
+    }
     public Vector3 GetClosestPoint(TurboMarching from, TurboMarching to) 
     {
         int minid=0;
         float mindis = 20f;
         for (int i = 0; i < from.walkpoints.Length; ++i)
         {
-            if (from.walkpoints[i].x == 0 || from.walkpoints[i].y == 0 || from.walkpoints[i].z == 0 || from.walkpoints[i].x > 9.5f || from.walkpoints[i].y > 9.5f || from.walkpoints[i].z > 9.5f)
+            if (from.walkpoints[i].pos.x == 0 || from.walkpoints[i].pos.y == 0 || from.walkpoints[i].pos.z == 0 || from.walkpoints[i].pos.x > 9.5f || from.walkpoints[i].pos.y > 9.5f || from.walkpoints[i].pos.z > 9.5f)
             {
                 if (Vector3.Distance(from.walkpoints[i].pos + from.transform.position, to.center) < mindis) 
                 {
@@ -465,46 +462,6 @@ public class Generator : NetworkBehaviour
             wpslist.AddRange(manager.turboMarchings[i].walkpoints);
         }
         walkpoints = wpslist.ToArray();
-    }
-    public List<Vector3> CalculatePoint(marchingspace ms,walkpoint point, Vector3 target)
-    {
-        int _i, _ii;
-        List<Vector3> outlist = new List<Vector3>();
-        //if (FastDist(point.position,target,4)) {
-        if (point.position == target) {
-            outlist.Add(point.position);
-            return outlist;
-        }
-        for (_i = 0; _i < point.friends.Count; ++_i)
-        {
-            if(ms.walkpoints.ContainsKey(point.friends[_i]))if (ms.walkpoints[point.friends[_i]].weight < point.weight)
-            {
-                outlist = CalculatePoint(ms, ms.walkpoints[point.friends[_i]], target);
-                if (outlist.Count != 0) {
-                    outlist.Add(point.position);
-                    return outlist;
-                }
-            }
-        }
-            for (_i = 0; _i < ms.friends.Count; ++_i) {
-            for (_ii = 0; _ii < marchingspace.neighborsTable.Length; ++_ii)
-            {
-                if (ms.friends[_i].walkpoints.ContainsKey(point.position + marchingspace.neighborsTable[_ii]))
-                {
-                    if (ms.friends[_i].walkpoints[point.position + marchingspace.neighborsTable[_ii]].weight < point.weight)
-                    {
-                        outlist = CalculatePoint(ms.friends[_i], ms.friends[_i].walkpoints[point.position + marchingspace.neighborsTable[_ii]], target);
-                        if (outlist.Count != 0)
-                        {
-                            outlist.Add(point.position);
-                            return outlist;
-                        }
-                    }
-                }
-            }
-            
-        }
-        return outlist;
     }
     public void SetMSWeights(marchingspace ms) {
         for (int i = 0; i < ms.friends.Count; ++i) {
@@ -552,24 +509,9 @@ public class Generator : NetworkBehaviour
         }
         return mslist;
     }
-    public class walkpoint {
-        public Vector3 position;
-        public List<Vector3> friends;
-        public float weight;
-        public float angle;
-        public float Yangle;
-        public bool isBorder;
-        public List<pointneighbor> pointneighbors;
-        public walkpoint(Vector3 position,bool isBorder) {
-            this.position = position;
-            friends = new List<Vector3>();
-            this.isBorder = isBorder;
-            pointneighbors = new List<pointneighbor>();
-        }
-    }
     public struct walkpointneighbors 
     {
-        public int n0, n1, n2, n3, n4, n5, n6, n7, n8;
+        public int n0, n1, n2, n3, n4, n5, n6, n7;
         public int this[int index] 
         {
             get {
@@ -583,7 +525,6 @@ public class Generator : NetworkBehaviour
                     case 5: return n5;
                     case 6: return n6;
                     case 7: return n7;
-                    case 8: return n8;
                 }
                 return n0;
             }
@@ -598,7 +539,6 @@ public class Generator : NetworkBehaviour
                     case 5: n5 = value;break;
                     case 6: n6 = value;break;
                     case 7: n7 = value;break;
-                    case 8: n8 = value;break;
                 }
             }
         }
@@ -613,13 +553,12 @@ public class Generator : NetworkBehaviour
             n5 = -1;
             n6 = -1;
             n7 = -1;
-            n8 = -1;
             Length = 0;
         }
 
         public void Add(int value) 
         {
-            if (Length > 9) { return; }
+            if (Length > 8) { return; }
             this[Length] = value;
             ++Length;
         }
@@ -641,8 +580,8 @@ public class Generator : NetworkBehaviour
     {
         isStartGenerate = true;
     }
-        IEnumerator Generate()
-        {
+    IEnumerator Generate()
+    {
         while (!isStart) { yield return new WaitForEndOfFrame(); }
         blackscreen.SetActive(true);
         loading.SetActive(true);
@@ -653,25 +592,39 @@ public class Generator : NetworkBehaviour
         }
         Random.seed = seed;
         funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
-        currentquest = (questtype)Random.Range(0, 3);
+        currentquest = (questtype)Random.Range(0, 5);
+        int replica=20;
         if (currentquest == questtype.Добыча)
         {
             questtarget = Random.Range(0, 4);
             questparam = Random.Range(2, 3) * resources[questtarget].maxInBag;//7,10
+            replica = 20 + questtarget;
         }
         else if (currentquest == questtype.Поиск)
         {
             questtarget = 4;
             questparam = Random.Range(2, 5) * 5;
+            replica = 24;
         }
         else if (currentquest == questtype.Подавление)
         {
             questtarget = 4;
             questparam = Random.Range(2, 4);
+            replica = 7;
         }
-        center = new Vector3((sizeX) * 58.5f / 2, (sizeY) * 58.5f / 2, (sizeZ) * 58.5f / 2);
-        print(center);
-        Debug.DrawRay(center, Vector3.up * 100f, Color.cyan, 30f);
+        else if (currentquest == questtype.Ликвидация)
+        {
+            questtarget = 0;
+            questparam = Random.Range(2, 4);
+            replica = 5;
+        }
+        else if (currentquest == questtype.Бойня)
+        {
+            questtarget = 0;
+            questparam = Random.Range(2, 6) * 20;
+            replica = 6;
+        }
+        MissionControlVoice.only.PlayReplica(replica);
         //walkpoints = new List<walkpoint>();
         walkpointscount = 0;
         generatedpoints = 0;
@@ -682,57 +635,123 @@ public class Generator : NetworkBehaviour
         cavepoints = new List<Vector3>();
         tunnelpoints = new List<Vector3>();
         Vector3 walker;
-        Vector3 d_vec=new Vector3();
+        Vector3 d_vec = new Vector3();
 
         float randomshake = 0.5f, stepsize = 1f;
 
-        for (int i = 0; i < 3; ++i)
-        {
-            Vector3 vec = new Vector3();
-            vec.y = Random.Range(1, sizeY * 3-1) * 19 + 9;
-            vec.x = Random.Range(1, sizeX * 3-1) * 19 + 9;
-            vec.z = Random.Range(1, sizeZ * 3-1) * 19 + 9;
-            cavepoints.Add(vec);
+        int roomtype = 0;//1
 
-            walker = vec;
-            for (int ii = 0; ii < 50; ++ii)
+        if (roomtype == 0)
+        {
+            center = new Vector3((sizeX) * 58.5f / 2, (sizeY) * 58.5f / 2, (sizeZ) * 58.5f / 2);
+            print(center);
+            Debug.DrawRay(center, Vector3.up * 100f, Color.cyan, 30f);
+            for (int i = 0; i < 3; ++i)
+            {
+                Vector3 vec = new Vector3();
+                vec.y = Random.Range(1, sizeY * 3 - 1) * 19 + 9;
+                vec.x = Random.Range(1, sizeX * 3 - 1) * 19 + 9;
+                vec.z = Random.Range(1, sizeZ * 3 - 1) * 19 + 9;
+                cavepoints.Add(vec);
+
+                walker = vec;
+                for (int ii = 0; ii < 50; ++ii)
+                {
+                    d_vec = new Vector3();
+                    if (Vector3.Distance(walker, center) < 13) { break; }
+                    walker += new Vector3(Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake));
+                    //walker -= (walker-center) / 15;
+
+                    if (walker.x > center.x) { d_vec.x = -stepsize; }
+                    if (walker.x < center.x) { d_vec.x = stepsize; }
+                    if (walker.y > center.y) { d_vec.y = -stepsize; }
+                    if (walker.y < center.y) { d_vec.y = stepsize; }
+                    if (walker.z > center.z) { d_vec.z = -stepsize; }
+                    if (walker.z < center.z) { d_vec.z = stepsize; }
+                    walker += d_vec;
+                    tunnelpoints.Add(walker);
+                }
+            }
+            for (int i = 0; i < 4; ++i)
+            {
+                Vector3 secondcave = new Vector3(Random.Range(1, sizeX * 6 - 1) * 10 + 9, Random.Range(1, sizeY * 6 - 1) * 10 + 9, Random.Range(1, sizeZ * 6 - 1) * 10 + 9);
+                int buftrgt = Random.Range(0, cavepoints.Count);
+                cavepoints.Add(secondcave);
+                walker = secondcave;
+                float count = 50 + (Vector3.Distance(secondcave, cavepoints[buftrgt]) - 50) / 3;
+                for (int ii = 0; ii < count; ++ii)
+                {
+                    d_vec = new Vector3();
+                    if (Vector3.Distance(walker, cavepoints[buftrgt]) < 4) { break; }
+                    walker += new Vector3(Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake));
+                    //walker -= (walker - cavepoints[buftrgt]) / 15;
+                    if (walker.x > center.x) { d_vec.x = -stepsize; }
+                    if (walker.x < center.x) { d_vec.x = stepsize; }
+                    if (walker.y > center.y) { d_vec.y = -stepsize; }
+                    if (walker.y < center.y) { d_vec.y = stepsize; }
+                    if (walker.z > center.z) { d_vec.z = -stepsize; }
+                    if (walker.z < center.z) { d_vec.z = stepsize; }
+                    walker += d_vec;
+                    tunnelpoints.Add(walker);
+                }
+            }
+        }else
+        if (roomtype == 1)
+        {
+            center = new Vector3((sizeX) * 58.5f / 2, (sizeY) * 58.5f*0.75f, (sizeZ) * 58.5f / 2);
+            print(center);
+            Debug.DrawRay(center, Vector3.up * 100f, Color.cyan, 30f);
+            for (int i = 0; i < 3; ++i)
+            {
+                Vector3 vec = new Vector3();
+                vec.x = Random.Range(1, sizeX * 3 - 1) * 9 + 9;
+                vec.y = Random.Range(-4, 2) * 19 + center.y;
+                vec.z = Random.Range(1, sizeZ * 3 - 1) * 19 + 9;
+                cavepoints.Add(vec);
+
+                walker = vec;
+                for (int ii = 0; ii < 50; ++ii)
+                {
+                    d_vec = new Vector3();
+                    if (Vector3.Distance(walker, center) < 10) { break; }
+                    walker += new Vector3(Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake));
+                    //walker -= (walker-center) / 15;
+
+                    if (walker.x > center.x) { d_vec.x = -stepsize; }
+                    if (walker.x < center.x) { d_vec.x = stepsize; }
+                    if (walker.y > center.y) { d_vec.y = -stepsize; }
+                    if (walker.y < center.y) { d_vec.y = stepsize; }
+                    if (walker.z > center.z) { d_vec.z = -stepsize; }
+                    if (walker.z < center.z) { d_vec.z = stepsize; }
+                    walker += d_vec;
+                    tunnelpoints.Add(walker);
+                }
+            }
+            Vector3 othercave;
+            othercave.x = Random.Range(1, sizeX * 3 - 1) * 19 + 9;
+            othercave.y = Random.Range(-2, 2) * 10 + center.y*0.6f;
+            othercave.z = Random.Range(1, sizeZ * 3 - 1) * 19 + 9;
+            walker = othercave;
+            canion = new Vector4(othercave.x, othercave.y, othercave.z, Random.Range(0f, 1f));
+            Vector3 targ = cavepoints[Random.Range(0, cavepoints.Count)];
+            for (int ii = 0; ii < 130; ++ii)
             {
                 d_vec = new Vector3();
-                if (Vector3.Distance(walker, center) < 13) { break; }
-                    walker +=new Vector3(Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake));
-                //walker -= (walker-center) / 15;
-
-                if (walker.x > center.x) { d_vec.x = -stepsize; }
-                if (walker.x < center.x) { d_vec.x = stepsize; }
-                if (walker.y > center.y) { d_vec.y = -stepsize; }
-                if (walker.y < center.y) { d_vec.y = stepsize; }
-                if (walker.z > center.z) { d_vec.z = -stepsize; }
-                if (walker.z < center.z) { d_vec.z = stepsize; }
+                if (Vector3.Distance(walker, targ) < 5) { break; }
+                walker += new Vector3(Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake));
+                if (walker.x > targ.x) { d_vec.x = -stepsize; }
+                if (walker.x < targ.x) { d_vec.x = stepsize; }
+                if (walker.y > targ.y) { d_vec.y = -stepsize; }
+                if (walker.y < targ.y) { d_vec.y = stepsize; }
+                if (walker.z > targ.z) { d_vec.z = -stepsize; }
+                if (walker.z < targ.z) { d_vec.z = stepsize; }
                 walker += d_vec;
                 tunnelpoints.Add(walker);
             }
-        }
-        for (int i = 0; i < 4; ++i)
-        {
-            Vector3 secondcave = new Vector3(Random.Range(1, sizeX * 6 - 1) * 10 + 9, Random.Range(1, sizeY * 6 - 1) * 10 + 9, Random.Range(1, sizeZ * 6 - 1) * 10 + 9);
-            int buftrgt = Random.Range(0, cavepoints.Count);
-            cavepoints.Add(secondcave);
-            walker = secondcave;
-            float count = 50 + (Vector3.Distance(secondcave, cavepoints[buftrgt]) - 50) / 3;
-            for (int ii = 0; ii < count; ++ii)
+            if (isServer)
             {
-                d_vec = new Vector3();
-                if (Vector3.Distance(walker, cavepoints[buftrgt]) < 4) { break; }
-                walker += new Vector3(Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake), Random.Range(-randomshake, randomshake));
-                //walker -= (walker - cavepoints[buftrgt]) / 15;
-                if (walker.x > center.x) { d_vec.x = -stepsize; }
-                if (walker.x < center.x) { d_vec.x = stepsize; }
-                if (walker.y > center.y) { d_vec.y = -stepsize; }
-                if (walker.y < center.y) { d_vec.y = stepsize; }
-                if (walker.z > center.z) { d_vec.z = -stepsize; }
-                if (walker.z < center.z) { d_vec.z = stepsize; }
-                walker += d_vec;
-                tunnelpoints.Add(walker);
+                GameObject ob = Instantiate(bridge, othercave, Quaternion.Euler(0, canion.w * 360+90, 0));
+                NetworkServer.Spawn(ob);
             }
         }
         yield return GenerateClusters();
@@ -741,7 +760,8 @@ public class Generator : NetworkBehaviour
         if (isServer)
         {
             UpdateWalkGroup();
-            if (currentquest == questtype.Подавление) CmdSpawnHives();
+            if (currentquest == questtype.Подавление) CmdSpawnHives(true);
+            if (currentquest == questtype.Ликвидация) CmdSpawnHives(false);
         }
         generatingphase = 1;
     //    if(isServer) yield return CalculateFriends();
@@ -751,6 +771,7 @@ public class Generator : NetworkBehaviour
     }
     IEnumerator Start()
     {
+        only = this;
         revivePoints = new Dictionary<string, float>();
         if (isServer)
         {
@@ -772,7 +793,7 @@ public class Generator : NetworkBehaviour
         int ind;
         FastNoiseLite noise = new FastNoiseLite();
         noise.SetSeed(seed);
-        biomemap = new Texture3D(300, 120, 300, TextureFormat.RGB24, false);//TODO подогнать размеры под размер карты
+        biomemap = new Texture3D(300, 300, 300, TextureFormat.RGB24, false);//TODO подогнать размеры под размер карты
         Color[] biomearray = new Color[biomemap.width * biomemap.height * biomemap.depth];
         for (int i = 0; i < orepoints.Count; ++i) {
             f = noise.GetNoise(orepoints[i].x*0.05f, orepoints[i].y * 0.05f, orepoints[i].z * 0.05f) +1f;
@@ -902,6 +923,14 @@ public class Generator : NetworkBehaviour
         {
             return GameObject.FindGameObjectsWithTag("Hive").Length==0;
         }
+        if (currentquest == questtype.Ликвидация) 
+        {
+            return questprogress>=questparam;
+        }
+        if (currentquest == questtype.Бойня) 
+        {
+            return questprogress>=questparam;
+        }
         return false;
     }
     public float GetLoadingStatus() {
@@ -968,7 +997,8 @@ public class Generator : NetworkBehaviour
                 else
                 {
                     platform.GetComponent<Animation>().Play("двер");
-                    CmdSetPlarformStatus(2);
+                    isdooropened = true;
+                    if(isServer)CmdSetPlarformStatus(2);
                 }
             }
             else if (platformstatus == 3)
@@ -979,17 +1009,24 @@ public class Generator : NetworkBehaviour
                 }
                 else
                 {
-                    CmdSetPlarformStatus(0);
+                    if (isServer) CmdSetPlarformStatus(0);
                     UIaccountlevel.SetActive(true);
                     if (isServer) { CmdSwitchDelete(); platform.transform.position = startplatfromposition; }
                 }
             }
             else if (platformstatus == 2) {
                 ActualiseMission();
+                if (!isdooropened)
+                {
+                    platform.GetComponent<Animation>().Play("двер");
+                    isdooropened = true;
+                    print("а");
+                }
                 if (isQuestCompleteLocal != isQuestCompete) {
                     isQuestCompleteLocal = isQuestCompete;
                     UICompleted.SetActive(true);
-                    music.PlayOneShot(m_endtrack);
+                    MissionControlVoice.only.PlayReplica(10);
+                    //music.PlayOneShot(m_endtrack);
                 }
                 int diecount = 0;
                 for (int i = 0; i < player.players.Count;++i) {
@@ -1006,6 +1043,7 @@ public class Generator : NetworkBehaviour
                 if (!musicPlaying&&platform.transform.position.y<80) { 
                     PlayOneShot("event:/павшие");
                     musicPlaying = true;
+
                 }
                 blackscreen.SetActive(true);
             }
@@ -1017,7 +1055,7 @@ public class Generator : NetworkBehaviour
                     localseed = seed;
                     Random.seed = seed;
                     funnyname = funnyA[Random.Range(0, funnyA.Length)] + " " + funnyB[Random.Range(0, funnyB.Length)];
-                    currentquest = (questtype)Random.Range(0, 3);
+                    currentquest = (questtype)Random.Range(0, 5);
                     if (currentquest == questtype.Добыча)
                     {
                         questtarget = Random.Range(0, resources.Count);
@@ -1036,17 +1074,31 @@ public class Generator : NetworkBehaviour
                         questparam = Random.Range(2, 4);
                         resourcePic.texture = missioncontroller.missiontypes[(int)currentquest].icon.texture;
                     }
+                    else if (currentquest == questtype.Ликвидация)
+                    {
+                        questtarget = 0;
+                        questparam = Random.Range(2, 4);
+                        resourcePic.texture = missioncontroller.missiontypes[(int)currentquest].icon.texture;
+                    }
+                    else if (currentquest == questtype.Бойня)
+                    {
+                        questtarget = 0;
+                        questparam = Random.Range(2, 6) * 20;
+                        resourcePic.texture = missioncontroller.missiontypes[(int)currentquest].icon.texture;
+                    }
                     missionName.text = funnyname;
                     missiontype.text = currentquest.ToString();
                     missionpic.sprite = missioncontroller.missiontypes[(int)currentquest].icon;
                     missiondifpic.sprite = missioncontroller.difficulties[questdifficulty].icon;
                     platform.GetComponent<Animation>().Play("двер");
+                    MissionControlVoice.only.PlayReplica(4);
                 }
             }
         }
         if (deleteitall != deleteitalllocal) {
             UICompleted.SetActive(false);
             isQuestCompete = false;
+            questprogress = 0;
             musicPlaying = true;
             isQuestCompleteLocal = false;
             CloseMission(isFailure); 
@@ -1055,6 +1107,9 @@ public class Generator : NetworkBehaviour
             hub.SetActive(true);
             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Chunk").Length; ++i) {
                 Destroy(GameObject.FindGameObjectsWithTag("Chunk")[i]);
+            }
+            for (int i = 0; i < GameObject.FindGameObjectsWithTag("Supply").Length; ++i) {
+                Destroy(GameObject.FindGameObjectsWithTag("Supply")[i]);
             }
             for (int i = 0; i < GameObject.FindGameObjectsWithTag("Bug").Length; ++i) {
                 Destroy(GameObject.FindGameObjectsWithTag("Bug")[i]);
@@ -1178,14 +1233,30 @@ public class Generator : NetworkBehaviour
     public enum questtype { 
         Добыча,
         Поиск,
-        Подавление
+        Подавление,
+        Бойня,
+        Ликвидация,
+        Подрыв
     }
-    public static readonly string[] funnyA = { "Зов", "Ужас", "Крик", "Поиск", "Защита","Предвосхищение","Ожидание","Стремление" };
-    public static readonly string[] funnyB = { "Ужаса", "Вечности", "Пустоты", "Отчаяния", "Риска", "Власти","Наживы","Удачи","Восторга","Жизни" };
+    public static readonly string[] funnyA = { "Зов", "Ужас", "Крик", "Поиск", "Защита","Предвосхищение","Ожидание","Стремление","Дыра","Ложбина","Яма","Задумка","Авантюра","Кратеры","Пещеры","Просторы","План" };
+    public static readonly string[] funnyB = { "Ужаса", "Вечности", "Пустоты", "Отчаяния", "Риска", "Власти","Наживы","Удачи","Восторга","Жизни","Авантюриста","Шахтёра","Дженора","Космоса","Времени" };
 
     public static bool FastDist(Vector3 a, Vector3 b, float squaredistance)
     {
         return (a - b).sqrMagnitude < squaredistance;
+    }
+    public static Vector3 FibSphere(int i, int n, float radius, bool isZ)
+    {
+        var k = i + .5f;
+
+        var phi = Mathf.Acos(1f - 2f * k / n);
+        var theta = Mathf.PI * (1 + Mathf.Sqrt(5)) * k;
+
+        var x = Mathf.Cos(theta) * Mathf.Sin(phi);
+        var y = Mathf.Sin(theta) * Mathf.Sin(phi);
+        var z = isZ ? Mathf.Cos(phi) : 0;
+
+        return new Vector3(x, y, z) * radius;
     }
     private void PlayOneShot(string eventname)
     {

@@ -6,6 +6,7 @@ public class Destroyer : MonoBehaviour
 {
     public List<Resource> resources;
     public GameObject effector;
+    private Vector3 oldpos = new Vector3(-1,-1,-1);
     private void Start()
     {
         Destroy(Instantiate(effector, transform.position, transform.rotation), 2);
@@ -34,6 +35,10 @@ public class Destroyer : MonoBehaviour
         if (collision.collider.gameObject.CompareTag("Decoration"))
         { 
             Destroy(collision.collider.gameObject);
+        }
+        if (collision.gameObject.CompareTag("Arudanich")&&Random.Range(0,50)==0) 
+        {
+            MissionControlVoice.only.PlayReplica(3);
         }
     }
 }

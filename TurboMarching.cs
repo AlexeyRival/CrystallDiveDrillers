@@ -15,28 +15,33 @@ public class TurboMarching : MonoBehaviour
     public float step = 1.25f;
     public float isolevel = 0;
     public bool isDebug;
-    private Vector4[] space;
+    private float[] space;
     public Walkpoint[] walkpoints;
     private Triangle[] tris;
     private int[] trisconnections;
     public bool updateconnections;
     private bool updateconnectionslocal;
 
-    public GameObject[] allRotationObjects, grasses,flowers;
+    public GameObject[] allRotationObjects, grasses, flowers;
 
     // Buffers
-    ComputeBuffer triangleBuffer;
-    ComputeBuffer pointsBuffer;
-    ComputeBuffer walkpointsBuffer;
-    ComputeBuffer triCountBuffer;
-    ComputeBuffer walkCountBuffer;
-    ComputeBuffer connectorsBuffer;
-    ComputeBuffer walkpointsdatas;
+    private ComputeBuffer triangleBuffer;
+    private ComputeBuffer pointsBuffer;
+    private ComputeBuffer walkpointsBuffer;
+    private ComputeBuffer triCountBuffer;
+    private ComputeBuffer walkCountBuffer;
+    private ComputeBuffer connectorsBuffer;
+    private ComputeBuffer walkpointsdatas;
+    private ComputeBuffer destroybuffer;
 
     //соединения и поиск пути
     public bool cX, cY, cZ;
     public bool isChecked;
     public int weight;
+
+    //октодеревья
+    private const int maxgenerations = 4;
+    public List<OctoTree> octos = new List<OctoTree>();
 
     //кроме основы
     public Generator generator;
@@ -53,6 +58,8 @@ public class TurboMarching : MonoBehaviour
         center = transform.position + (new Vector3(sizeXYZ * step, sizeXYZ * step, sizeXYZ * step)) * 0.5f;
         Debug.DrawRay(center, Vector3.up, Color.magenta, 30f);
         decorations = new Dictionary<Vector3, GameObject>();
+        octos = new List<OctoTree>();
+        octos.Add(new OctoTree(0, center, 10f, false));
         Generate();
     }
     public void CheckUpdate(GameObject sph) {
@@ -97,7 +104,7 @@ public class TurboMarching : MonoBehaviour
             for (y = miny; y < maxy; ++y)
             {
                 //    my = cy / Mathf.Abs(x - cx)-1f;
-                for (z = minz; z < maxz; ++z) if (space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ].w > isolevel)
+                for (z = minz; z < maxz; ++z) if (space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] > isolevel)
                     {
                         //          mz = cz / Mathf.Abs(z - cz)-1f;
 
@@ -106,10 +113,10 @@ public class TurboMarching : MonoBehaviour
                         //if (Generator.FastDist(vec, new Vector3(x, y, z) * step + transform.position, scale))
                         if (Generator.FastDist(cvec, new Vector3(x, y, z), scl))
                         {
-                            space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ].w -= multipler;
+                            space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] -= multipler;
                             if (decorations.ContainsKey(new Vector3(x, y, z)*step)) { Destroy(decorations[new Vector3(x, y, z) * step]); }
                             //        space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ].w -= isolevel;
-                            if (!isChanged&&space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ].w < isolevel) isChanged = true;
+                            if (!isChanged&&space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] < isolevel) isChanged = true;
                         }
                     }
             }
@@ -117,7 +124,7 @@ public class TurboMarching : MonoBehaviour
 
         if (isChanged) { UpdateMesh(); }
     }
-    public void TurboUpdate(Vector3 centerpoint, float radius, Vector4[] points) {
+    public void TurboUpdate(Vector3 centerpoint, float radius, Vector4[] points,Vector4 canion) {
         noise = new FastNoiseLite();
         noise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2S);
         noise.SetSeed(generator.seed);
@@ -129,7 +136,7 @@ public class TurboMarching : MonoBehaviour
 
         int numPoints = sizeXYZ * sizeXYZ * sizeXYZ;
         int numVoxelsPerAxis = sizeXYZ;
-        pointsBuffer = new ComputeBuffer(numPoints, sizeof(float) * 4);
+        pointsBuffer = new ComputeBuffer(numPoints, sizeof(float));
         ComputeBuffer CaveBuffer = new ComputeBuffer(points.Length, sizeof(float) * 4);
         CaveBuffer.SetData(points);
 
@@ -149,26 +156,27 @@ public class TurboMarching : MonoBehaviour
         destroyerShader.SetInt("numPointsPerAxis", numVoxelsPerAxis);
         destroyerShader.SetFloat("radius", radius);
         destroyerShader.SetVector("desPoint", centerpoint);
+        destroyerShader.SetVector("canion", canion);
 
         //destroyerShader.Dispatch(_kernelindex,numThreadsPerAxis,numThreadsPerAxis,numThreadsPerAxis);
         destroyerShader.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
 
-        space = new Vector4[numPoints];
+        space = new float[numPoints];
         pointsBuffer.GetData(space, 0, 0, numPoints);
         //pointsBuffer.GetData(_bspace);
         //for (int i = 0; i < space.Length; ++i) { space[i] = _bspace[i]; }
         int id;
         for (int i = 0; i < 40; ++i) {
             id = Random.Range(0, space.Length);
-            if (space[id].w < isolevel - 0.05f)
+            if (space[id] < isolevel - 0.05f)
             {
-                generator.bugspawnpoints.Add(space[id] + new Vector4(transform.position.x, transform.position.y, transform.position.z, 0));
-                if (Random.Range(0, 50) == 0) { generator.startpoints.Add(space[id] + new Vector4(transform.position.x, transform.position.y, transform.position.z, 0)); }
+                generator.bugspawnpoints.Add(GetXYZfromId(id, step) + new Vector3(transform.position.x, transform.position.y, transform.position.z));
+                if (Random.Range(0, 50) == 0) { generator.startpoints.Add(GetXYZfromId(id, step) + new Vector3(transform.position.x, transform.position.y, transform.position.z)); }
             }
-            if (space[id].w > isolevel && space[id].w < isolevel + 0.05f && Random.Range(0, 5) == 0)
+            if (space[id] > isolevel && space[id] < isolevel + 0.05f && Random.Range(0, 5) == 0)
             {
-                Debug.DrawLine(space[id] + new Vector4(transform.position.x, transform.position.y, transform.position.z, 0), center, Color.cyan, 10f);
-                generator.orepoints.Add(space[id] + new Vector4(transform.position.x, transform.position.y, transform.position.z, 0));
+                Debug.DrawLine(GetXYZfromId(id, step) + new Vector3(transform.position.x, transform.position.y, transform.position.z), center, Color.cyan, 10f);
+                generator.orepoints.Add(GetXYZfromId(id, step) + new Vector3(transform.position.x, transform.position.y, transform.position.z));
             }
         }
 
@@ -176,9 +184,13 @@ public class TurboMarching : MonoBehaviour
         CaveBuffer.Release();
         CaveBuffer.Dispose();
     }
+    private Vector3 GetXYZfromId(int id,float scale) 
+    {
+        return new Vector3((id % sizeXYZ) * scale, (id / sizeXYZ % sizeXYZ) * scale, (id / sizeXYZ / sizeXYZ) * scale);
+    }
     public void Generate()
     {
-        space = new Vector4[sizeXYZ * sizeXYZ * sizeXYZ];
+        space = new float[sizeXYZ * sizeXYZ * sizeXYZ];
         noise = new FastNoiseLite();
         secondnoise = new FastNoiseLite();
         thirdnoise = new FastNoiseLite();
@@ -195,7 +207,7 @@ public class TurboMarching : MonoBehaviour
         List<Vector4> cavepoints = new List<Vector4>();
         for (i = 0; i < generator.cavepoints.Count; ++i)
         {
-            cavepoints.Add(new Vector4(generator.cavepoints[i].x, generator.cavepoints[i].y, generator.cavepoints[i].z, 16));
+            cavepoints.Add(new Vector4(generator.cavepoints[i].x, generator.cavepoints[i].y, generator.cavepoints[i].z, 18));
         }
         List<Vector4> tunnelpoints = new List<Vector4>();
         for (i = 0; i < generator.tunnelpoints.Count; ++i)
@@ -204,23 +216,24 @@ public class TurboMarching : MonoBehaviour
         }
 
         int x, y, z;
-        for (x = 0; x < sizeXYZ; ++x)
+     /*   for (x = 0; x < sizeXYZ; ++x)
             for (y = 0; y < sizeXYZ; ++y)
                 for (z = 0; z < sizeXYZ; ++z)
                 {
-                    space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] = new Vector4(x * step, y * step, z * step, 10);
-                    //   space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] = new Vector4(x * step, y * step, z * step, (noise.GetNoise((x * step + transform.position.x) * size, (y * step + transform.position.y) * size, (z * step + transform.position.z) * size) + 1f) * 10f);
-                }
+                    //space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] = 10;// new Vector4(x * step, y * step, z * step, 10);
+                    space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] = (noise.GetNoise((x * step + transform.position.x) * size, (y * step + transform.position.y) * size, (z * step + transform.position.z) * size) + 1f) * 10f;
+        //   space[x + y * sizeXYZ + z * sizeXYZ * sizeXYZ] = new Vector4(x * step, y * step, z * step, (noise.GetNoise((x * step + transform.position.x) * size, (y * step + transform.position.y) * size, (z * step + transform.position.z) * size) + 1f) * 10f);
+    }*/
         tunnelpoints.AddRange(cavepoints);
         Vector4[] arr = tunnelpoints.ToArray();
-        TurboUpdate(Generator.center, 20, arr);
+        TurboUpdate(Generator.center, 35, arr,generator.canion);
         UpdateMesh();
         int l = walkpoints.Length;
         float n,fn;
         for (i = 0; i < l; ++i) if (i % 3 == 0)// && Random.Range(0, 8) == 0)
         {
-                n = noise.GetNoise(walkpoints[i].x + transform.position.x, walkpoints[i].y + transform.position.y, walkpoints[i].z + transform.position.z);
-                fn = secondnoise.GetNoise(walkpoints[i].x + transform.position.x, walkpoints[i].y + transform.position.y, walkpoints[i].z + transform.position.z);
+                n = noise.GetNoise(walkpoints[i].pos.x + transform.position.x, walkpoints[i].pos.y + transform.position.y, walkpoints[i].pos.z + transform.position.z);
+                fn = secondnoise.GetNoise(walkpoints[i].pos.x + transform.position.x, walkpoints[i].pos.y + transform.position.y, walkpoints[i].pos.z + transform.position.z);
                 /* if (noise.GetNoise(walkpoints[i].x + transform.position.x, walkpoints[i].y + transform.position.y, walkpoints[i].z + transform.position.z) < -0.4f)
                  {
                      Instantiate(allRotationObjects[Random.Range(0, allRotationObjects.Length)], walkpoints[i].pos + transform.position, Quaternion.Euler(walkpoints[i].Yangle * 0, 0, 90 * walkpoints[i].angle), transform).name=walkpoints[i].angle+":"+walkpoints[i].Yangle;
@@ -243,7 +256,7 @@ public class TurboMarching : MonoBehaviour
                 {
                     decorations.Add(walkpoints[i].pos, Instantiate(flowers[(int)(-n * 20) % flowers.Length], walkpoints[i].pos + transform.position, Quaternion.Euler(0, (fn*100000f)%100, 0), transform));
                 }
-                //else print(walkpoints[i].Yangle);
+                //else print(walkpoints[i].angle);
             }
         /*
         for (x = 0; x < sizeXYZ; ++x)
@@ -257,31 +270,48 @@ public class TurboMarching : MonoBehaviour
     }
     private void OnDestroy()
     {
-        pointsBuffer.Dispose();
-        triangleBuffer.Dispose();
-        walkpointsBuffer.Dispose();
-        walkCountBuffer.Dispose();
-        triCountBuffer.Dispose();
-        triangleBuffer.Dispose();
+        if (pointsBuffer != null) pointsBuffer.Dispose();
+        if (triangleBuffer != null) triangleBuffer.Dispose();
+        if (walkpointsBuffer != null) walkpointsBuffer.Dispose();
+        if (walkCountBuffer != null) walkCountBuffer.Dispose();
+        if (triCountBuffer != null) triCountBuffer.Dispose();
+        if (triangleBuffer != null) triangleBuffer.Dispose();
     }
-    public void UpdateMesh()
+    public void UpdateMesh() { UpdateMesh(new Vector4[0]); }
+    public void UpdateMesh(Vector4[] destroyers)
     {
-
+        bool justup=false;
         int numPoints = sizeXYZ * sizeXYZ * sizeXYZ;
         int numVoxelsPerAxis = sizeXYZ - 1;
         int numVoxels = numVoxelsPerAxis * numVoxelsPerAxis * numVoxelsPerAxis;
         int maxTriangleCount = numVoxels * 5;
 
-        int[] cons = new int[3];
+        int[] cons = new int[4];
         // Always create buffers in editor (since buffers are released immediately to prevent memory leak)
         // Otherwise, only create if null or if size has changed
 
-        triangleBuffer = new ComputeBuffer(maxTriangleCount, sizeof(float) * 9+sizeof(int), ComputeBufferType.Append);
-        pointsBuffer = new ComputeBuffer(numPoints, sizeof(float) * 4);
+        triangleBuffer = new ComputeBuffer(maxTriangleCount, sizeof(float) * 9, ComputeBufferType.Append);
+        pointsBuffer = new ComputeBuffer(numPoints, sizeof(float));
         triCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
         walkCountBuffer = new ComputeBuffer(1, sizeof(int), ComputeBufferType.Raw);
-        walkpointsBuffer = new ComputeBuffer(numPoints, sizeof(float) * 6 + sizeof(int), ComputeBufferType.Append);
-        connectorsBuffer = new ComputeBuffer(3, sizeof(int));
+        walkpointsBuffer = new ComputeBuffer(numPoints/2, sizeof(float) * 5 + sizeof(int), ComputeBufferType.Append);
+        connectorsBuffer = new ComputeBuffer(4, sizeof(int), ComputeBufferType.Raw);
+
+        if (destroyers.Length == 0)
+        {
+            destroyers = new Vector4[] { new Vector4(0, 0, 0, 0) };
+            justup = true;
+        }
+        else
+        {
+            Vector3 bv;
+            for (int i = 0; i < destroyers.Length; ++i) 
+            {
+                bv = new Vector3(destroyers[i].x, destroyers[i].y, destroyers[i].z) - transform.position;
+                destroyers[i] = new Vector4(bv.x, bv.y, bv.z, destroyers[i].w);
+            }
+        }
+        destroybuffer = new ComputeBuffer(destroyers.Length, sizeof(float) * 4, ComputeBufferType.Raw);
         int threadGroupSize = 8;
 
         Mesh mesh = new Mesh();
@@ -291,187 +321,165 @@ public class TurboMarching : MonoBehaviour
 
         pointsBuffer.SetData(space);
         connectorsBuffer.SetData(cons);
+        destroybuffer.SetData(destroyers);
 
-        int _kernelindex = shader.FindKernel("March");
-
-        triangleBuffer.SetCounterValue(0);
-        walkpointsBuffer.SetCounterValue(0);
+        int _kernelindex = shader.FindKernel("Dest");
         shader.SetBuffer(_kernelindex, "points", pointsBuffer);
-        shader.SetBuffer(_kernelindex, "triangles", triangleBuffer);
-        shader.SetBuffer(_kernelindex, "walkpoints", walkpointsBuffer);
+        shader.SetBuffer(_kernelindex, "destroyers", destroybuffer);
         shader.SetBuffer(_kernelindex, "connectors", connectorsBuffer);
-        shader.SetInt("numPointsPerAxis", sizeXYZ);
-        shader.SetFloat("isoLevel", isolevel);
-        shader.SetInt("seed", generator.seed);
-        shader.SetVector("chunkpos", transform.position);
-
-        shader.Dispatch(0, numThreadsPerAxis, numThreadsPerAxis, numThreadsPerAxis);
-
-        //навигационные кубы
-
-        ComputeBuffer.CopyCount(walkpointsBuffer, walkCountBuffer, 0);
-        int[] walkCountArray = { 0 };
-        walkCountBuffer.GetData(walkCountArray);
-        int numWalks = walkCountArray[0];
-
-        walkpoints = new Walkpoint[numWalks];
-        walkpointsBuffer.GetData(walkpoints, 0, 0, numWalks);
-
-        // Get number of triangles in the triangle buffer
-        ComputeBuffer.CopyCount(triangleBuffer, triCountBuffer, 0);
-        int[] triCountArray = { 0 };
-        triCountBuffer.GetData(triCountArray);
-        int numTris = triCountArray[0];
-
-
-        // Get triangle data from shader
-        Triangle[] tris = new Triangle[numTris];
-        triangleBuffer.GetData(tris, 0, 0, numTris);
-
-        // получение коннекторов
+        shader.Dispatch(_kernelindex, numThreadsPerAxis, numThreadsPerAxis, numThreadsPerAxis);
+        bool changed = false;
+        // получение изменения
         connectorsBuffer.GetData(cons);
-        cX = cons[0] == 1;
-        cY = cons[1] == 1;
-        cZ = cons[2] == 1;
-
-
-        mesh.Clear();
-
-        var vertices = new Vector3[numTris * 3];
-        trisconnections = new int[numTris * 3];
-        var meshTriangles = new int[numTris * 3];
-
-        for (int i = 0; i < numTris; i++)
+        changed = cons[3] == 1;
+        if (changed||justup)
         {
-            for (int j = 0; j < 3; j++)
+            _kernelindex = shader.FindKernel("March");
+            triangleBuffer.SetCounterValue(0);
+            walkpointsBuffer.SetCounterValue(0);
+            shader.SetBuffer(_kernelindex, "points", pointsBuffer);
+            shader.SetBuffer(_kernelindex, "triangles", triangleBuffer);
+            shader.SetBuffer(_kernelindex, "walkpoints", walkpointsBuffer);
+            shader.SetBuffer(_kernelindex, "connectors", connectorsBuffer);
+            shader.SetBuffer(_kernelindex, "destroyers", destroybuffer);
+            shader.SetInt("numPointsPerAxis", sizeXYZ);
+            shader.SetFloat("isoLevel", isolevel);
+            shader.SetFloat("scale", step);
+            shader.SetInt("seed", generator.seed);
+            shader.SetVector("chunkpos", transform.position);
+
+            shader.Dispatch(_kernelindex, numThreadsPerAxis, numThreadsPerAxis, numThreadsPerAxis);
+
+            //навигационные кубы
+
+            ComputeBuffer.CopyCount(walkpointsBuffer, walkCountBuffer, 0);
+            int[] walkCountArray = { 0 };
+            walkCountBuffer.GetData(walkCountArray);
+            int numWalks = walkCountArray[0];
+
+            walkpoints = new Walkpoint[numWalks];
+            walkpointsBuffer.GetData(walkpoints, 0, 0, numWalks);
+
+            // Get number of triangles in the triangle buffer
+            ComputeBuffer.CopyCount(triangleBuffer, triCountBuffer, 0);
+            int[] triCountArray = { 0 };
+            triCountBuffer.GetData(triCountArray);
+            int numTris = triCountArray[0];
+
+
+            // Get triangle data from shader
+            Triangle[] tris = new Triangle[numTris];
+            triangleBuffer.GetData(tris, 0, 0, numTris);
+
+            // получение коннекторов
+            connectorsBuffer.GetData(cons);
+            cX = cons[0] == 1;
+            cY = cons[1] == 1;
+            cZ = cons[2] == 1;
+
+            pointsBuffer.GetData(space, 0, 0, space.Length);
+
+            mesh.Clear();
+
+            var vertices = new Vector3[numTris * 3];
+            var meshTriangles = new int[numTris * 3];
+
+            for (int i = 0; i < numTris; i++)
             {
-                meshTriangles[i * 3 + j] = i * 3 + j;
-                vertices[i * 3 + j] = tris[i][j];
-                trisconnections[i * 3 + j] = tris[i].pointparent;
-            }
-        }
-        mesh.vertices = vertices;
-        //mesh.color TODO !!!!!!!
-        mesh.triangles = meshTriangles;
-        mesh.RecalculateTangents();
-        mesh.RecalculateNormals();
-        mesh.RecalculateBounds();
-
-        filter.mesh = mesh;
-        collider.sharedMesh = mesh;
-
-        triangleBuffer.Release();
-        pointsBuffer.Release();
-        triCountBuffer.Release();
-        walkCountBuffer.Release();
-        walkpointsBuffer.Release();
-        walkpointsBuffer.Dispose();
-        connectorsBuffer.Release();
-        connectorsBuffer.Dispose();
-
-        //свет
-        //UpdateLight();
-
-        //навигация
-        UpdateNav();
-    }
-    private const int RAYSNUMBER=128;
-    private void UpdateLight() 
-    {
-        UpdateLight(FindObjectsOfType<Light>());
-    }
-    public void UpdateLight(Light[] lights) 
-    {
-        if (trisconnections.Length == 0) { return; }
-        Color[] trislight = new Color[trisconnections.Length];
-
-        LightWave[] allwaves;
-        List<LightWave> allwayslist = new List<LightWave>();
-        for (int i = 0; i < lights.Length; ++i)
-        {
-            if (lights[i].type == LightType.Point&&Vector3.Distance(center,lights[i].transform.position)<lights[i].range+5)
-            {
-                LightWave[] lightWaves = new LightWave[RAYSNUMBER];
-                for (int l = 0; l < RAYSNUMBER; ++l) 
+                for (int j = 0; j < 3; j++)
                 {
-                    lightWaves[l].pos = lights[i].transform.position-transform.position;
-                    lightWaves[l].moveVector = FibSphere(l,RAYSNUMBER,1f);
-                    lightWaves[l].color = lights[i].color;
-                    lightWaves[l].time = lights[i].intensity;
-                    lightWaves[l].maxtime = lights[i].intensity;
+                    meshTriangles[i * 3 + j] = i * 3 + j;
+                    vertices[i * 3 + j] = tris[i][j];
                 }
-                allwayslist.AddRange(lightWaves);
             }
-        }
-        allwaves = allwayslist.ToArray();
+            mesh.vertices = vertices;
+            //mesh.color TODO !!!!!!!
+            mesh.triangles = meshTriangles;
+            //print(mesh.triangles.Length);
+            mesh.RecalculateTangents();
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
 
-        if (allwaves.Length > 0)
-        {
-            int numPoints = sizeXYZ * sizeXYZ * sizeXYZ;
+            filter.mesh = mesh;
+            collider.sharedMesh = mesh;
 
-            pointsBuffer = new ComputeBuffer(numPoints, sizeof(float) * 4);
-            pointsBuffer.SetData(space);
-            ComputeBuffer trisconnectionsbuffer = new ComputeBuffer(trisconnections.Length, sizeof(int));
-            trisconnectionsbuffer.SetData(trisconnections);
-            ComputeBuffer trislightbuffer = new ComputeBuffer(trislight.Length, sizeof(float) * 4);
-            trislightbuffer.SetData(trislight);
-            ComputeBuffer wavesbuffer = new ComputeBuffer(allwaves.Length, sizeof(float) * 12);
-            wavesbuffer.SetData(allwaves);
-
-            int numThreadsPerAxis = Mathf.CeilToInt(allwaves.Length / (float)8);
-            //int numVoxelsPerAxis = sizeXYZ - 1;
-            int numThreadsPerAxisY = Mathf.CeilToInt(space.Length / (float)8);
-            int numThreadsPerAxisZ = Mathf.CeilToInt(Mathf.Sqrt(trisconnections.Length) / (float)8);
-            int _kernelindex = EnterpriseShader.FindKernel("Light");
-
-            EnterpriseShader.SetBuffer(_kernelindex,"points",pointsBuffer);
-            EnterpriseShader.SetBuffer(_kernelindex,"connections",trisconnectionsbuffer);
-            EnterpriseShader.SetBuffer(_kernelindex,"light",trislightbuffer);
-            EnterpriseShader.SetBuffer(_kernelindex,"waves",wavesbuffer);
-            EnterpriseShader.SetInt("iteration",0);
-            EnterpriseShader.SetFloat("sqrtlen",Mathf.Sqrt(trisconnections.Length));
-
-            for (int i = 0; i < 10; ++i) 
-            {
-                EnterpriseShader.SetInt("iteration",i);
-                EnterpriseShader.Dispatch(_kernelindex, numThreadsPerAxisY, numThreadsPerAxisZ, numThreadsPerAxisZ);
-            }
-
-            trislightbuffer.GetData(trislight, 0, 0, trislight.Length);
-
+            triangleBuffer.Release();
             pointsBuffer.Release();
-            trisconnectionsbuffer.Release();
-            trislightbuffer.Release();
-            wavesbuffer.Release();
-            pointsBuffer.Dispose();
-            trisconnectionsbuffer.Dispose();
-            trislightbuffer.Dispose();
-            wavesbuffer.Dispose();
-            GetComponent<MeshFilter>().mesh.colors = trislight;
+            triCountBuffer.Release();
+            walkCountBuffer.Release();
+            walkpointsBuffer.Release();
+            walkpointsBuffer.Dispose();
+            connectorsBuffer.Release();
+            connectorsBuffer.Dispose();
+            destroybuffer.Release();
+            destroybuffer.Dispose();
+            //свет
+            //UpdateLight();
+
+            //навигация
+            //UpdateNav();
         }
+        else
+        {
+            triangleBuffer.Release();
+            pointsBuffer.Release();
+            triCountBuffer.Release();
+            walkCountBuffer.Release();
+            walkpointsBuffer.Release();
+            walkpointsBuffer.Dispose();
+            connectorsBuffer.Release();
+            connectorsBuffer.Dispose();
+            destroybuffer.Release();
+            destroybuffer.Dispose();
+        }
+        UpdateOctos();
     }
-    private Vector3 FibSphere(int i, int n, float radius)
+
+    private void PlayOneShot(string eventname)
     {
-        var k = i + .5f;
-
-        var phi = Mathf.Acos(1f - 2f * k / n);
-        var theta = Mathf.PI * (1 + Mathf.Sqrt(5)) * k;
-
-        var x = Mathf.Cos(theta) * Mathf.Sin(phi);
-        var y = Mathf.Sin(theta) * Mathf.Sin(phi);
-        var z = Mathf.Cos(phi);
-
-        return new Vector3(x, y, z) * radius;
+        FMOD.Studio.EventInstance instance = FMODUnity.RuntimeManager.CreateInstance(eventname);
+        instance.set3DAttributes(FMODUnity.RuntimeUtils.To3DAttributes(gameObject));
+        instance.start();
+        instance.release();
     }
+    public void UpdateOctos()
+    {
+        octos = new List<OctoTree>();
+        if (filter.mesh.vertexCount == 0) { return; }
+        octos.Add(new OctoTree(0, center, 10f, false));
+        int vc = GetComponent<MeshFilter>().mesh.vertexCount;
+        bool isContains;
+        List<OctoTree> buflist;
+        for (int k = 0; k < maxgenerations; ++k) 
+        {
+            buflist = new List<OctoTree>();
+            for (int i = 0; i < octos.Count; ++i) if (!octos[i].isChecked)
+                {
+                    octos[i].isChecked = true;
+                    if (Physics.CheckBox(octos[i].position, new Vector3(octos[i].size, octos[i].size, octos[i].size)))
+                    {
+                        if (k < maxgenerations - 1)
+                        {
+                            buflist.AddRange(octos[i].Subdevide());
+                        }
+                        else
+                        {
+                            octos[i].isContain = true;
+                        }
+                    }
+                }
+             octos.AddRange(buflist);  //else { octos.AddRange(buflist); }
+        }
 
+    }
     public void UpdateNav() 
     {
         if (walkpoints.Length == 0) { return; }
        // print("соединение");
         walkpointneighbors = new Generator.walkpointneighbors[walkpoints.Length];
 
-        walkpointsBuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 6 + sizeof(int));
-        walkpointsdatas = new ComputeBuffer(walkpoints.Length, sizeof(int)*10);
+        walkpointsBuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 5 + sizeof(int));
+        walkpointsdatas = new ComputeBuffer(walkpoints.Length, sizeof(int)*9);
         walkpointsBuffer.SetData(walkpoints);
         walkpointsdatas.SetData(walkpointneighbors);
 
@@ -559,31 +567,6 @@ public class TurboMarching : MonoBehaviour
         }
 
     }
-    public void SetNavigationOld(Vector3 startpoint)
-    {
-        int _kernelindex = navShader.FindKernel("Clear");
-        ComputeBuffer navbuffer = new ComputeBuffer(walkpoints.Length, sizeof(float) * 6 + sizeof(int));
-        navbuffer.SetData(walkpoints);
-        navShader.SetBuffer(_kernelindex, "points", navbuffer);
-        int numThreadsPerAxis = Mathf.CeilToInt(walkpoints.Length / (float)8);
-        navShader.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
-        _kernelindex = navShader.FindKernel("Splat");
-        navShader.SetVector("startpoint", startpoint - transform.position);
-        navShader.SetBuffer(_kernelindex, "points", navbuffer);
-        navShader.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
-        _kernelindex = navShader.FindKernel("Set");
-        navShader.SetBuffer(_kernelindex, "points", navbuffer);
-        for (int i = 0; i < 50; ++i)
-        {
-            navShader.SetInt("iter", i);
-            navShader.Dispatch(_kernelindex, numThreadsPerAxis, 1, 1);
-        }/**/
-     //   print("есть обработка!");
-        for (int i = 0; i < 10; ++i) { print(walkpoints[Random.Range(0, walkpoints.Length)].iter); }
-        walkpoints = new Walkpoint[walkpoints.Length];
-        navbuffer.GetData(walkpoints, 0, 0, walkpoints.Length);
-        navbuffer.Release();
-    }
     Generator.walkpointneighbors[] walkpointneighbors;
     public List<Vector3> GetPath(Vector3 endpoint)
     {
@@ -633,21 +616,30 @@ public class TurboMarching : MonoBehaviour
             for (int i = 0; i < walkpoints.Length; ++i)
             {
                 Gizmos.color = new Color(walkpoints[i].weight*0.01f,0,1- walkpoints[i].weight*0.01f);
-                Gizmos.DrawCube(new Vector3((walkpoints[i].x  + transform.position.x), (walkpoints[i].y  + transform.position.y), (walkpoints[i].z  + transform.position.z)), one);
+                Gizmos.DrawCube(new Vector3((walkpoints[i].pos.x  + transform.position.x), (walkpoints[i].pos.y  + transform.position.y), (walkpoints[i].pos.z  + transform.position.z)), one);
                for (int ii = 0; ii < walkpointneighbors[i].Length; ++ii) if(walkpointneighbors[i][ii]!=-1)
                 {
                     Debug.DrawLine(walkpoints[i].pos+transform.position,walkpoints[walkpointneighbors[i][ii]].pos + transform.position, Gizmos.color);
                 }
             }
+            
         }
         if (Application.isEditor) if (updateconnectionslocal!=updateconnections) {
                 updateconnectionslocal = updateconnections;
                 filter = GetComponent<MeshFilter>();
                 collider = GetComponent<MeshCollider>();
             }
-        if (Application.isEditor)
+        if (false)//Application.isEditor)
         {
-            
+            for (int i = 0; i < octos.Count; ++i) 
+            {
+                Gizmos.color = octos[i].isContain ? new Color(1,0,0,1-(1f/octos[i].size*1.25f)) : new Color(1, 1/(octos[i].generation*0.75f), 1, 1-(1f/ octos[i].size*1.25f));
+                Gizmos.DrawWireCube(octos[i].position, new Vector3(octos[i].size, octos[i].size, octos[i].size));
+                if (octos[i].parent != null) 
+                {
+              //      Gizmos.DrawLine(octos[i].position, octos[i].parent.position);
+                }
+            }
           //  bool isSelected = Selection.Contains(gameObject);
           //  Gizmos.color = isSelected ? new Color(0.168f, 0.5814968f, 0.93741f, 0.24f) : new Color(0.465f, 0.21978f, 0.1678f, 0.24f);
             /*if(cX)Debug.DrawRay(center,new Vector3(-10,0,0),Color.blue);
@@ -666,7 +658,6 @@ public class TurboMarching : MonoBehaviour
         public Vector3 a;
         public Vector3 b;
         public Vector3 c;
-        public int pointparent;
         public Vector3 this[int i]
         {
             get
@@ -688,21 +679,50 @@ public class TurboMarching : MonoBehaviour
 #pragma warning disable 649 // disable unassigned variable warning
         public Vector3 pos;
         public float weight;
+        public int angle;
         public int iter;
-        public float angle;
-        public float Yangle;
-        public float x { get { return pos.x; } }
-        public float y { get { return pos.y; } }
-        public float z { get { return pos.z; } }
     }
-    public struct LightWave 
+    public class OctoTree
     {
-        #pragma warning disable 649 // disable unassigned variable warning
-        public Vector3 pos;
-        public Vector3 moveVector;
-        public Color color;
-        public float time;
-        public float maxtime;
+        public int generation;
+        public Vector3 position;
+        public float size;
+        public OctoTree parent;
+        public bool isContain;
+        public bool isChecked;
+
+        public OctoTree(int generation, Vector3 position, float size, bool isContain)
+        {
+            this.generation = generation;
+            this.position = position;
+            this.size = size;
+            this.isContain = isContain;
+        }
+        public OctoTree(int generation, Vector3 position, float size, bool isContain, OctoTree parent)
+        {
+            this.generation = generation;
+            this.position = position;
+            this.size = size;
+            this.isContain = isContain;
+            this.parent = parent;
+        }
+        public List<OctoTree> Subdevide() 
+        {
+            List<OctoTree> outs = new List<OctoTree>();
+            float s = size * 0.25f;
+            float c = size * 0.5f;
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(s, s, s), c, false,this));
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(-s, s, s), c, false, this));
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(s, s, -s), c, false, this));
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(-s, s, -s), c, false, this));
+
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(s, -s, s), c, false, this));
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(-s, -s, s), c, false, this));
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(s, -s, -s), c, false, this));
+            outs.Add(new OctoTree(generation + 1, position + new Vector3(-s, -s, -s), c, false, this));
+
+            return outs;
+        }
     }
     public static readonly Vector3[] neighborsTable = {
         new Vector3(-0.5f,-0.5f,-0.5f),
